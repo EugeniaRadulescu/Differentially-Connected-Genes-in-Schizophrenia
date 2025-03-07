@@ -56,7 +56,6 @@ library(vsn)
 
 ######### Samples selection and data normalization ###############
 
-
 # Load the SummarizedExperiment objects containing gene expression (bulk RNA-Seq) and degradation matrices for DLPFC, Hippocampus and Caudate
 
 region=c('DLPFC','HIPPO','Caudate')
@@ -73,12 +72,6 @@ rse_gene_RiboZero = rse_gene[,rse_gene$Age >= age.min &
                                rse_gene$Dx %in% case &
                                rse_gene$Race %in% ethnicity &
                                unlist(rse_gene$RIN)>=6.5]
-
-RNum_current<-colData(rse_gene_RiboZero)$RNum
-
-min(colData(rse_gene_RiboZero)$Age)
-max(colData(rse_gene_RiboZero)$Age)
-table(colData(rse_gene_RiboZero)$Race)
 
 data<-assays(rse_gene_RiboZero)
 data<-as.data.frame(data[[1]])
@@ -148,7 +141,7 @@ names(Gene_Symbol)<-"Symbol"
 Final_Gene_IDs<-join(Gene_Symbol,Gene_IDs,by="Symbol",type="inner")
 Final_Gene_IDs<-Final_Gene_IDs[!duplicated(Final_Gene_IDs$Symbol),]
 
-identical(Final_Gene_IDs$Symbol,rownames(datExpr_Symbol)) # Sanity check
+identical(Final_Gene_IDs$Symbol,rownames(datExpr_Symbol)) # Sanity check; it should be TRUE
 
 # Remove expression outliers from (log2tr + 1) data:
 
@@ -191,7 +184,7 @@ meanSdPlot(as.matrix(datExpr_minusOutliers))
 
 RNum<-colnames(datExpr_minusOutliers)
 
-# DLPFC and Caudate
+# For DLPFC and Caudate
 RNum<-as.data.frame(gsub("_.*","",RNum))
 names(RNum)<-"RNum"
 
@@ -206,9 +199,9 @@ Metadata<-join(RNum,Metadata,by="RNum",type="inner")
 colnames(datExpr_minusOutliers)<-RNum$RNum
 
 identical(Metadata$RNum,colnames(datExpr_minusOutliers)) # Sanity check:
-TRUE
+# TRUE
 
-# Create the variables table to include also genomic PCs:
+# Include genomic PCs in the covariates table:
 
 LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec <- read.delim("/directory/LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec.txt")
 ancestry<-LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec
@@ -243,7 +236,7 @@ cov_rse_region<-cov_rse[[1]][,RNum_final]
 
 
 # Load the metadata for the three regions
-# Create the table with demographics and technical covariates
+# Create the final table with demographics and technical covariates
 
 dt<-table1(~ Age + RIN + factor(Race) +
        factor(Sex) + PMI | Region*Dx, data = Metadata_3regs, overall = FALSE)
@@ -260,7 +253,7 @@ saveWorkbook(wb, "Demographics_and_technical_covariates.xlsx", overwrite = TRUE)
 collectGarbage()
 
 
-###### Check the sample overlap across the 3 regions #############
+###### Check the samples overlap across the 3 regions #############
 
 # Load the metadata for the three regions
 # Samples:
@@ -299,7 +292,7 @@ grid.draw(venn.plot)
 dev.off()
 
 
-#### Prepare data for cleaningY ######
+#### Prepare data for expression cleaning with cleaningY() ######
 
 rm(list = ls()) ## Clear workspace
 
@@ -396,7 +389,7 @@ fit_gene<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRN
                snpPC8 + snpPC9 + snpPC10,data=info)
 
 
-vif(fit_gene) # Check for multicollinearity
+vif(fit_gene) # Check for multicollinearity and remove variables with VIF>10
 
 collectGarbage()
 
@@ -484,7 +477,6 @@ covs = "~ Dx + Age + Sex + mitoRate + RIN +
 mod = model.matrix(as.formula(covs), data = info)
 
 # Protect the diagnosis:
-
 
 cleanExprs_protectDx = jaffelab::cleaningY(geneExpr[3], mod, P=2) # All variables removed, except for dx and intercept that are protected
 
