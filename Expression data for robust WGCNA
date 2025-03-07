@@ -1,1 +1,152 @@
+###### Prepare the data for rWGCNA, DLPFC, Hippo, Caudate ######
+
+# Load cleanes expression data and metadata (info) for the three regions:
+# Split data by diagnosis:
+
+CTRL_index<-which(info$Dx=="Control")
+datExpr_CTRL<-t(cleanExprs_protectDx)[CTRL_index,]
+SCZ_index<-which(info$Dx=="SCZD")
+datExpr_SCZ<-t(cleanExprs_protectDx)[SCZ_index,]
+
+nSets=2;
+setLabels=c("CTRL","SCZ");
+shortLabels=c("CTRL","SCZ");
+multiExpr=vector(mode="list",length=nSets);
+
+multiExpr[[1]]=list(data=datExpr_CTRL);
+names(multiExpr[[1]]$data)=names(datExpr_CTRL);
+rownames(multiExpr[[1]]$data)=dimnames(datExpr_CTRL)[[1]]
+
+multiExpr[[2]]=list(data=datExpr_SCZ);
+names(multiExpr[[2]]$data)=names(datExpr_SCZ);
+rownames(multiExpr[[2]]$data)=dimnames(datExpr_SCZ)[[1]]
+
+exprSize=checkSets(multiExpr)
+
+
+###### Select beta power with sft() #########
+
+# Allow multi-threading in WGCNA
+allowWGCNAThreads();
+
+# The following setting is important, do not omit.
+options(stringsAsFactors = FALSE);
+
+# Basic sizes of data
+
+size = checkSets(multiExpr);
+nSamples = size$nSamples;
+nGenes = size$nGenes;
+nSets = size$nSets;
+
+# Set names for printing
+setNames = setLabels
+
+powers = c(seq(1,30,by=1));
+powerTables = vector(mode = "list", length = nSets);
+
+for (set in 1:nSets)
+  powerTables[[set]] = list(data = pickSoftThreshold(multiExpr[[set]]$data, powerVector=powers,
+                                                     networkType = "signed",
+                                                     verbose = 2 )[[2]]);
+
+
+collectGarbage();
+
+# Re-format results for plotting
+
+meanK = modelFit = matrix(0, length(powers), nSets);
+for (set in 1:nSets)
+{
+  modelFit[, set] = -sign(powerTables[[set]]$data[,3])*powerTables[[set]]$data[,2];
+  meanK[, set] = powerTables[[set]]$data[,5];
+}
+
+
+library(gplots)
+library("RColorBrewer")
+col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(50)
+
+colors = c("blue","red")
+sizeGrWindow(10, 8);
+
+pdf(file = "Plots_scaleFreeTopology.pdf", wi = 10, h=8);
+
+par(mfrow = c(1,2));
+plot(powers, modelFit[, 1],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",
+     pch = 21, col = 'blue', bg = 1,
+     main = "Scale independence",
+     ylim = range(modelFit));
+addGrid();
+
+# This line corresponds to using an R^2 cut-off of h
+
+abline(h=0.85,col="red")
+abline(v=10,col="red") # 14 for Hippocampus 
+
+for (set in 2:nSets)
+  points(powers, modelFit[, set], pch = 21, col = colors[set], bg = colors[set]);
+legend("bottomright", legend = setNames, pch = 21, col = colors, cex=0.5,fill=colors);
+
+# Plot of mean connectivity
+
+plot(powers, meanK[, 1],
+     xlab="Soft Threshold (power)",ylab="Mean Connectivity",
+     main = "Mean connectivity", pch = 21, col = 1, bg = 1, ylim = c(0, 20000));
+addGrid();
+for (set in 2:nSets)
+  points(powers, meanK[, set], pch = 21, col = colors[set], bg = colors[set]);
+legend("topright", legend = setNames, pch = 21, col = colors,cex=0.5,fill=colors);
+
+# If plotting into a file, close it
+
+dev.off();
+
+collectGarbage()
+
+# Save the expression files for the next step
+
+##### Bootstrap the expression data for consensus analysis ######
+
+# Load multiExpression data and perform bootstrapping for CTRL and SCZ
+Bootstrap_Dx<-c("CTRL,"SCZ)
+
+collectGarbage()
+
+set.seed(0924)
+
+nsets<-50
+Bootstrap_Dx<-vector(mode = "list",length = nsets)
+
+for(i in 1:nsets){
+  
+  Bootstrap_Dx[[i]]<-datExpr_Dx[sample.int(nrow(datExpr_Dx), replace=T),]
+  
+}
+
+collectGarbage()
+
+nSets=nsets;
+prefix<-"B"
+suffix<-seq(1:nsets)
+Bs<-paste(prefix,suffix,sep="")
+setLabels=Bs 
+shortLabels=Bs;
+multiExpr=vector(mode="list",length=nsets);
+
+for(i in 1:nsets){
+  multiExpr[[i]]=list(data=Bootstrap_Dx[[i]]);
+  names(multiExpr[[i]]$data)=names(Bootstrap_Dx[[i]]);
+  rownames(multiExpr[[i]]$data)=dimnames(Bootstrap_Dx[[i]])[[1]]
+}
+
+
+exprSize=checkSets(multiExpr)
+
+rm(Bootstrap_Dx)
+
+# Save the 50 expression sets
+
+
 
