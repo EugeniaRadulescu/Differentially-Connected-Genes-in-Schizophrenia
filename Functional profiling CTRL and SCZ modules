@@ -100,7 +100,7 @@ O
 # Continue with cluster profiler:
 
 ego2<-vector(mode = "list",length = nsets)
-names(ego2)<-names(SCZ_Caudate)
+names(ego2)<-names(Dx_Region)
 
 for(i in 1:nsets){
   
@@ -114,7 +114,6 @@ for(i in 1:nsets){
   )
 }
 
-head(ego2$blue@result)
 
 O2 <-as.data.frame(do.call(rbind,lapply(ego2,function(x) dim(x)[1])))
 
@@ -128,7 +127,7 @@ O2
 head(ego2[[17]])
 
 ego3<-vector(mode = "list",length = nsets)
-names(ego3)<-names(SCZ_Caudate)
+names(ego3)<-names(Dx_Region)
 
 for(i in 1:nsets){
   
@@ -146,7 +145,7 @@ rownames(O3)<-NULL
 
 O3
 
-# Select the first 10 biological processes to create visualization with rrvgo STOP HERE
+# Select the first 10 biological processes to create visualization with rrvgo 
 
 ego3_red<- vector('list', length(ego3))
 
@@ -162,7 +161,7 @@ library(rrvgo)
 collectGarbage()
 
 ego3_df<-vector(mode = "list",length = nsets)
-names(ego3_df)<-names(SCZ_Caudate)
+names(ego3_df)<-names(Dx_Region)
 
 for(i in 1:nsets){
   ego3_df[[i]]<-as.data.frame(ego3[[i]])
@@ -231,9 +230,6 @@ ego3_df<-rbind(ego3_df[[1]],ego3_df[[2]],ego3_df[[3]],ego3_df[[4]],ego3_df[[5]],
                ego3_df[[31]],ego3_df[[32]],ego3_df[[33]],ego3_df[[34]],ego3_df[[35]])
 
 
-### Check again dimensions of ego3
-
-O3
 
 ##### Create the 'Module' variable, without grey:
 
@@ -277,7 +273,7 @@ Module<-c(rep('bisque4',O3$count[1]),rep('black',O3$count[2]),rep('blue',O3$coun
           rep('white',O3$count[53]),rep('yellow',O3$count[54]),rep('yellowgreen',O3$count[55]))
 
 
-##### CTRL Hippo:
+##### CTRL Hippocampus:
 
 Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[3]),
           rep('cyan',O3$count[4]),rep('darkgreen',O3$count[5]),
@@ -289,7 +285,7 @@ Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[
           rep('tan',O3$count[22]),rep('turquoise',O3$count[23]),
           rep('yellow',O3$count[24]))
 
-#### SCZ Hippo
+#### SCZ Hippocampus:
 
 Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[3]),
           rep('cyan',O3$count[4]),rep('darkgreen',O3$count[5]),
@@ -352,7 +348,4 @@ heatmapPlot(simMatrix,
 
 scatterPlot(simMatrix,reducedTerms)
 
-save.image("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/clusterProfiler_and_rrvgo_SCZ_Caudate_07152024.RData")
-
-write.csv(ego3_df,file="SupplTable_ClusterProfiler_SCZ_modules_DLPFC_07152024.csv")
-
+# Save the results and create supplementary figures
