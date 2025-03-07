@@ -1,1 +1,358 @@
+###### Functional profiling CTRL and SCZ modules for the 3 regions; GO:BP#######
+
+collectGarbage()
+
+# Load the expression data and modules:
+
+Genes<-colnames(multiExpr[[1]]$data) 
+_Dx<-c("CTRL","SCZ")
+_Region<-c("DLPFC", "Hippocampus", "Caudate")
+
+DF<-as.data.frame(cbind(Genes,unmergedColors_Dx))
+names(DF)<-c("Genes","unmergedColors_Dx")
+
+library(data.table)
+
+DF<-setDT(DF)
+
+DF<-DF[order(DF$unmergedColors_Dx), ]
+
+Dx_mods<-split(DF,by="unmergedColors_Dx")
+
+collectGarbage()
+
+# recursive function to remove name from all levels of list
+
+stripname <- function(x, name) {
+  thisdepth <- depth(x)
+  if (thisdepth == 0) {
+    return(x)
+  } else if (length(nameIndex <- which(names(x) == name))) {
+    x <- x[-nameIndex]
+  }
+  return(lapply(x, stripname, name))
+}
+
+# function to find depth of a list element
+# see http://stackoverflow.com/questions/13432863/determine-level-of-nesting-in-r
+depth <- function(this, thisdepth=0){
+  if (!is.list(this)) {
+    return(thisdepth)
+  } else{
+    return(max(unlist(lapply(this,depth,thisdepth=thisdepth))))    
+  }
+}
+
+
+x<-stripname(Dx_mods,"unmergedColors_Dx")
+
+nsets=length(x)
+
+Dx_Region<-vector(mode = "list",length = nsets)
+
+for(i in 1:nsets){
+  
+  Dx_Region[i]<-list(as.vector(x[[i]]$Genes))
+  
+}
+
+names(Dx_Region)<-names(x)
+
+library(clusterProfiler)
+
+ego<-vector(mode = "list",length = nsets)
+names(ego)<-names(Dx_Region)
+
+for(i in 1:nsets){
+  
+  ego[[i]] <- enrichGO(gene          = Dx_Region[[i]],
+                       universe      = Genes,
+                       OrgDb         = org.Hs.eg.db,
+                       ont           = "BP",
+                       keyType       = 'SYMBOL',
+                       minGSSize    = 100,
+                       maxGSSize    = 5000,
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.001,
+                       qvalueCutoff  = 0.001,
+                       pool = FALSE,
+                       readable = FALSE) 
+}
+
+collectGarbage()
+
+
+#### Get the dimensions of data frames in lists
+#### Identify modules without GO:BP
+#### Obtain dim
+
+O <-as.data.frame(do.call(rbind,lapply(ego,function(x) dim(x)[1])))
+
+#### Format
+
+O$ego <- rownames(O)
+O <- O[,c(2,1)]
+names(O)[2]<-'count'
+rownames(O)<-NULL
+
+O
+
+# Continue with cluster profiler:
+
+ego2<-vector(mode = "list",length = nsets)
+names(ego2)<-names(SCZ_Caudate)
+
+for(i in 1:nsets){
+  
+  ego2[[i]]<-clusterProfiler::simplify(
+    ego[[i]],
+    cutoff = 0.7,
+    by = "p.adjust",
+    select_fun = min,
+    measure = "Wang",
+    semData = NULL
+  )
+}
+
+head(ego2$blue@result)
+
+O2 <-as.data.frame(do.call(rbind,lapply(ego2,function(x) dim(x)[1])))
+
+O2$ego <- rownames(O2)
+O2 <- O2[,c(2,1)]
+names(O2)[2]<-'count'
+rownames(O2)<-NULL
+
+O2
+
+head(ego2[[17]])
+
+ego3<-vector(mode = "list",length = nsets)
+names(ego3)<-names(SCZ_Caudate)
+
+for(i in 1:nsets){
+  
+  ego3[[i]]<-dropGO(ego2[[i]],level=3)
+  
+}
+
+
+O3 <-as.data.frame(do.call(rbind,lapply(ego3,function(x) dim(x)[1])))
+
+O3$ego <- rownames(O3)
+O3 <- O3[,c(2,1)]
+names(O3)[2]<-'count'
+rownames(O3)<-NULL
+
+O3
+
+# Select the first 10 biological processes to create visualization with rrvgo STOP HERE
+
+ego3_red<- vector('list', length(ego3))
+
+for(i in seq_along(ego3)){
+  ego3_red[[i]] <- ego3[[i]]@result[1:10,]
+}
+
+names(ego3_red)<-names(ego3)
+
+
+library(rrvgo)
+
+collectGarbage()
+
+ego3_df<-vector(mode = "list",length = nsets)
+names(ego3_df)<-names(SCZ_Caudate)
+
+for(i in 1:nsets){
+  ego3_df[[i]]<-as.data.frame(ego3[[i]])
+  
+}
+
+# DLPFC; CTRL
+ego3_df<-rbind(ego3_df[[1]],ego3_df[[2]],ego3_df[[3]],ego3_df[[4]],ego3_df[[5]],
+               ego3_df[[6]],ego3_df[[7]],ego3_df[[8]],ego3_df[[9]],ego3_df[[10]],
+               ego3_df[[11]],ego3_df[[13]],ego3_df[[14]],ego3_df[[15]],
+               ego3_df[[16]],ego3_df[[17]],ego3_df[[18]],ego3_df[[19]],ego3_df[[20]],
+               ego3_df[[21]],ego3_df[[22]],ego3_df[[23]],ego3_df[[24]],ego3_df[[25]],
+               ego3_df[[26]],ego3_df[[27]],ego3_df[[28]],ego3_df[[29]],ego3_df[[30]],
+               ego3_df[[31]],ego3_df[[32]],ego3_df[[33]])
+
+# DLPFC SCZ
+
+ego3_df<-rbind(ego3_df[[1]],ego3_df[[2]],ego3_df[[3]],ego3_df[[4]],ego3_df[[5]],
+               ego3_df[[6]],ego3_df[[7]],ego3_df[[8]],ego3_df[[9]],ego3_df[[10]],
+               ego3_df[[11]],ego3_df[[12]],ego3_df[[13]],ego3_df[[14]],ego3_df[[15]],
+               ego3_df[[16]],ego3_df[[17]],ego3_df[[18]],ego3_df[[20]],
+               ego3_df[[21]],ego3_df[[22]],ego3_df[[23]],ego3_df[[24]],ego3_df[[25]],
+               ego3_df[[26]],ego3_df[[27]],ego3_df[[28]],ego3_df[[29]],ego3_df[[30]],
+               ego3_df[[31]],ego3_df[[32]],ego3_df[[33]],
+               ego3_df[[34]],ego3_df[[35]],ego3_df[[36]],
+               ego3_df[[37]],ego3_df[[38]],ego3_df[[39]],
+               ego3_df[[40]],ego3_df[[41]],ego3_df[[42]],
+               ego3_df[[43]],ego3_df[[44]],ego3_df[[45]],
+               ego3_df[[46]],ego3_df[[47]],ego3_df[[48]],
+               ego3_df[[49]],ego3_df[[50]],ego3_df[[51]],
+               ego3_df[[52]],ego3_df[[53]],ego3_df[[54]],ego3_df[[55]])
+
+# Hippo; CTRL
+
+ego3_df<-rbind(ego3_df[[1]],ego3_df[[2]],ego3_df[[3]],ego3_df[[4]],ego3_df[[5]],
+               ego3_df[[6]],ego3_df[[7]],ego3_df[[8]],ego3_df[[9]],
+               ego3_df[[11]],ego3_df[[12]],ego3_df[[13]],ego3_df[[14]],
+               ego3_df[[15]],ego3_df[[16]],ego3_df[[17]],ego3_df[[18]],ego3_df[[19]],
+               ego3_df[[20]],ego3_df[[21]],ego3_df[[22]],ego3_df[[23]],ego3_df[[24]])
+
+# Hippo SCZ
+
+ego3_df<-rbind(ego3_df[[1]],ego3_df[[2]],ego3_df[[3]],ego3_df[[4]],ego3_df[[5]],
+               ego3_df[[6]],ego3_df[[7]],ego3_df[[8]],ego3_df[[9]],
+               ego3_df[[11]],ego3_df[[12]],ego3_df[[13]],ego3_df[[14]],
+               ego3_df[[15]],ego3_df[[16]],ego3_df[[17]],ego3_df[[18]],ego3_df[[19]],
+               ego3_df[[20]],ego3_df[[21]],ego3_df[[22]],ego3_df[[23]],ego3_df[[24]])
+
+# Caudate; CTRL
+
+ego3_df<-rbind(ego3_df[[1]],ego3_df[[2]],ego3_df[[3]],ego3_df[[4]],ego3_df[[5]],
+               ego3_df[[6]],ego3_df[[7]],ego3_df[[8]],ego3_df[[9]],ego3_df[[10]],
+               ego3_df[[11]],ego3_df[[13]],ego3_df[[14]],
+               ego3_df[[15]],ego3_df[[16]],ego3_df[[17]],ego3_df[[18]],ego3_df[[19]],
+               ego3_df[[20]],ego3_df[[21]],ego3_df[[22]],ego3_df[[23]],ego3_df[[24]],
+               ego3_df[[25]],ego3_df[[26]],ego3_df[[27]],ego3_df[[28]])
+
+# Caudate SCZ
+
+ego3_df<-rbind(ego3_df[[1]],ego3_df[[2]],ego3_df[[3]],ego3_df[[4]],ego3_df[[5]],
+               ego3_df[[6]],ego3_df[[7]],ego3_df[[8]],ego3_df[[9]],ego3_df[[10]],
+               ego3_df[[11]],ego3_df[[12]],ego3_df[[13]],ego3_df[[15]],
+               ego3_df[[16]],ego3_df[[17]],ego3_df[[18]],ego3_df[[19]],ego3_df[[20]],
+               ego3_df[[21]],ego3_df[[22]],ego3_df[[23]],ego3_df[[24]],ego3_df[[25]],
+               ego3_df[[26]],ego3_df[[27]],ego3_df[[28]],ego3_df[[29]],ego3_df[[30]],
+               ego3_df[[31]],ego3_df[[32]],ego3_df[[33]],ego3_df[[34]],ego3_df[[35]])
+
+
+### Check again dimensions of ego3
+
+O3
+
+##### Create the 'Module' variable, without grey:
+
+##### CTRL DLPFC:
+
+Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[3]),
+rep('cyan',O3$count[4]),rep('darkgreen',O3$count[5]),rep('darkgrey',O3$count[6]),rep('darkorange',O3$count[7]),
+rep('darkred',O3$count[8]),rep('darkturquoise',O3$count[9]),rep('green',O3$count[10]),rep('greenyellow',O3$count[11]),
+rep('grey60',O3$count[13]),rep('lightcyan',O3$count[14]),rep('lightgreen',O3$count[15]),
+rep('lightyellow',O3$count[16]),rep('magenta',O3$count[17]),rep('midnightblue',O3$count[18]),rep('orange',O3$count[19]),
+rep('paleturquoise',O3$count[20]),rep('pink',O3$count[21]),rep('purple',O3$count[22]),rep('red',O3$count[23]),
+rep('royalblue',O3$count[24]),rep('saddlebrown',O3$count[25]),rep('salmon',O3$count[26]),rep('skyblue',O3$count[27]),
+rep('steelblue',O3$count[28]),rep('tan',O3$count[29]),rep('turquoise',O3$count[30]),rep('violet',O3$count[31]),
+rep('white',O3$count[32]),rep('yellow',O3$count[33]))
+
+#### SCZ DLPFC
+
+Module<-c(rep('bisque4',O3$count[1]),rep('black',O3$count[2]),rep('blue',O3$count[3]),rep('brown',O3$count[4]),
+          rep('brown4',O3$count[5]),
+          rep('cyan',O3$count[6]),rep('darkgreen',O3$count[7]),rep('darkgrey',O3$count[8]),
+          rep('darkmagenta',O3$count[9]),
+          rep('darkolivegreen',O3$count[10]),rep('darkorange',O3$count[11]),rep('darkorange2',O3$count[12]),
+          rep('darkred',O3$count[13]),rep('darkslateblue',O3$count[14]),
+          rep('darkturquoise',O3$count[15]),rep('floralwhite',O3$count[16]),rep('green',O3$count[17]),
+          rep('greenyellow',O3$count[18]),
+          rep('grey60',O3$count[20]),rep('ivory',O3$count[21]),
+          rep('lightcyan',O3$count[22]),rep('lightcyan1',O3$count[23]),rep('lightgreen',O3$count[24]),
+          rep('lightsteelblue1',O3$count[25]),
+          rep('lightyellow',O3$count[26]),rep('magenta',O3$count[27]),rep('mediumpurple3',O3$count[28]),
+          rep('midnightblue',O3$count[29]),rep('navajowhite2',O3$count[30]),rep('orange',O3$count[31]),
+          rep('orangered4',O3$count[32]),
+          rep('paleturquoise',O3$count[33]),rep('palevioletred3',O3$count[34]),rep('pink',O3$count[35]),
+          rep('plum1',O3$count[36]),rep('plum2',O3$count[37]),
+          rep('purple',O3$count[38]),rep('red',O3$count[39]),
+          rep('royalblue',O3$count[40]),rep('saddlebrown',O3$count[41]),rep('salmon',O3$count[42]),
+          rep('salmon4',O3$count[43]),rep('sienna3',O3$count[44]),rep('skyblue',O3$count[45]),
+          rep('skyblue3',O3$count[46]),
+          rep('steelblue',O3$count[47]),rep('tan',O3$count[48]),
+          rep('thistle1',O3$count[49]),rep('thistle2',O3$count[50]),
+          rep('turquoise',O3$count[51]),rep('violet',O3$count[52]),
+          rep('white',O3$count[53]),rep('yellow',O3$count[54]),rep('yellowgreen',O3$count[55]))
+
+
+##### CTRL Hippo:
+
+Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[3]),
+          rep('cyan',O3$count[4]),rep('darkgreen',O3$count[5]),
+          rep('darkred',O3$count[6]),rep('darkturquoise',O3$count[7]),rep('green',O3$count[8]),rep('greenyellow',O3$count[9]),
+          rep('grey60',O3$count[11]),rep('lightcyan',O3$count[12]),rep('lightgreen',O3$count[13]),
+          rep('lightyellow',O3$count[14]),rep('magenta',O3$count[15]),rep('midnightblue',O3$count[16]),
+          rep('pink',O3$count[17]),rep('purple',O3$count[18]),rep('red',O3$count[19]),
+          rep('royalblue',O3$count[20]),rep('salmon',O3$count[21]),
+          rep('tan',O3$count[22]),rep('turquoise',O3$count[23]),
+          rep('yellow',O3$count[24]))
+
+#### SCZ Hippo
+
+Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[3]),
+          rep('cyan',O3$count[4]),rep('darkgreen',O3$count[5]),
+          rep('darkred',O3$count[6]),rep('darkturquoise',O3$count[7]),rep('green',O3$count[8]),rep('greenyellow',O3$count[9]),
+          rep('grey60',O3$count[11]),rep('lightcyan',O3$count[12]),rep('lightgreen',O3$count[13]),
+          rep('lightyellow',O3$count[14]),rep('magenta',O3$count[15]),rep('midnightblue',O3$count[16]),
+          rep('pink',O3$count[17]),rep('purple',O3$count[18]),rep('red',O3$count[19]),
+          rep('royalblue',O3$count[20]),rep('salmon',O3$count[21]),
+          rep('tan',O3$count[22]),rep('turquoise',O3$count[23]),
+          rep('yellow',O3$count[24]))
+
+
+###### CTRL Caudate:
+
+Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[3]),
+          rep('cyan',O3$count[4]),rep('darkgreen',O3$count[5]),rep('darkgrey',O3$count[6]),rep('darkorange',O3$count[7]),
+          rep('darkred',O3$count[8]),rep('darkturquoise',O3$count[9]),rep('green',O3$count[10]),rep('greenyellow',O3$count[11]),
+          rep('grey60',O3$count[13]),rep('lightcyan',O3$count[14]),rep('lightgreen',O3$count[15]),
+          rep('lightyellow',O3$count[16]),rep('magenta',O3$count[17]),rep('midnightblue',O3$count[18]),rep('orange',O3$count[19]),
+          rep('pink',O3$count[20]),rep('purple',O3$count[21]),rep('red',O3$count[22]),
+          rep('royalblue',O3$count[23]),rep('salmon',O3$count[24]),rep('tan',O3$count[25]),
+          rep('turquoise',O3$count[26]),rep('white',O3$count[27]),rep('yellow',O3$count[28]))
+
+# SCZ Caudate:
+
+Module<-c(rep('black',O3$count[1]),rep('blue',O3$count[2]),rep('brown',O3$count[3]),
+          rep('cyan',O3$count[4]),rep('darkgreen',O3$count[5]),rep('darkgrey',O3$count[6]),
+          rep('darkmagenta',O3$count[7]),rep('darkolivegreen',O3$count[8]),
+          rep('darkorange',O3$count[9]),
+          rep('darkred',O3$count[10]),rep('darkturquoise',O3$count[11]),
+          rep('green',O3$count[12]),rep('greenyellow',O3$count[13]),
+          rep('grey60',O3$count[15]),rep('lightcyan',O3$count[16]),rep('lightgreen',O3$count[17]),
+          rep('lightyellow',O3$count[18]),rep('magenta',O3$count[19]),rep('midnightblue',O3$count[20]),
+          rep('orange',O3$count[21]),
+          rep('paleturquoise',O3$count[22]),rep('pink',O3$count[23]),
+          rep('purple',O3$count[24]),rep('red',O3$count[25]),
+          rep('royalblue',O3$count[26]),rep('saddlebrown',O3$count[27]),
+          rep('salmon',O3$count[28]),rep('skyblue',O3$count[29]),
+          rep('steelblue',O3$count[30]),rep('tan',O3$count[31]),
+          rep('turquoise',O3$count[32]),rep('violet',O3$count[33]),
+          rep('white',O3$count[34]),rep('yellow',O3$count[35]))
+
+
+ego3_df$Module<-Module
+
+simMatrix <- calculateSimMatrix(ego3_df$ID,
+                                orgdb="org.Hs.eg.db",
+                                ont="BP",
+                                method="Wang")
+
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                threshold=0.7,
+                                orgdb="org.Hs.eg.db")
+
+heatmapPlot(simMatrix,
+            reducedTerms,
+            annotateParent=TRUE,
+            annotationLabel="parentTerm",
+            fontsize=6)
+
+scatterPlot(simMatrix,reducedTerms)
+
+save.image("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/clusterProfiler_and_rrvgo_SCZ_Caudate_07152024.RData")
+
+write.csv(ego3_df,file="SupplTable_ClusterProfiler_SCZ_modules_DLPFC_07152024.csv")
 
