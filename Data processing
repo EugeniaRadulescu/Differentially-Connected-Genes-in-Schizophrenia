@@ -1,1 +1,494 @@
+######### Load the required packages ###########
+
+library(WGCNA) 
+
+options(stringsAsFactors=FALSE)
+
+library(SummarizedExperiment)
+library(plyr)
+library(sva)
+library(limma)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(knitr)
+library(biomaRt) 
+library(ggplot2)
+library(ppcor)
+library(Hmisc)
+library(ggpmisc)
+library(igraph)
+library(tibble)
+library(dplyr)
+library(genefilter)
+library(data.table)
+library(VennDiagram)
+library(gridExtra)
+library(readxl)
+library(openxlsx)
+library(pheatmap)
+library(ComplexHeatmap)
+library(circlize)
+library(RColorBrewer)
+library(rrvgo) 
+library(MASS)
+library(flextable)
+library(psych)
+library(huxtable)
+library(kableExtra)
+library(tidyr)
+library(vtable)
+library(table1)
+library(variancePartition) 
+library(limma)
+library(GGally)
+library(broom)
+library(eulerr)
+library(GeneOverlap)
+library(SuperExactTest)
+library(GOSemSim)
+library(clusterProfiler)
+library(recount) 
+library(jaffelab)
+library(sva)
+library(matrixStats)
+library(lattice)
+library(vsn)
+
+######### Samples selection and data normalization ###############
+
+
+# Load the SummarizedExperiment objects containing gene expression (bulk RNA-Seq) and degradation matrices for DLPFC, Hippocampus and Caudate
+
+region=c('DLPFC','HIPPO','Caudate')
+
+### Demographics:
+
+age.min = 16; 
+age.max = 80
+case = c('Control','SCZD')
+ethnicity = c('CAUC','AA')
+
+rse_gene_RiboZero = rse_gene[,rse_gene$Age >= age.min &
+                               rse_gene$Age <= age.max & 
+                               rse_gene$Dx %in% case &
+                               rse_gene$Race %in% ethnicity &
+                               unlist(rse_gene$RIN)>=6.5]
+
+RNum_current<-colData(rse_gene_RiboZero)$RNum
+
+min(colData(rse_gene_RiboZero)$Age)
+max(colData(rse_gene_RiboZero)$Age)
+table(colData(rse_gene_RiboZero)$Race)
+
+data<-assays(rse_gene_RiboZero)
+data<-as.data.frame(data[[1]])
+
+names(data)
+
+collectGarbage()
+
+# Check distribution:
+
+counts=as.matrix(data)
+pl <- meanSdPlot(counts)
+pl$gg + ylim(0,100)
+
+# Get the RPKM:
+
+geneRpkm = recount::getRPKM(rse_gene_RiboZero, "Length")
+
+geneRpkm<-as.matrix(geneRpkm)
+
+tpmcutoff <- expression_cutoff(geneRpkm, max_cut=NULL, seed = 20171025) 
+
+abundance_cut=c(0.18,0.22) # DLPFC and HIPPO 0.18, Caudate 0.22
+
+abundance_cut=abundance_cut
+
+x=length(rse_gene_RiboZero$RNum) # The number of samples
+
+n=round(x*80/100)
+f1<-kOverA(n,abundance_cut) 
+flist<-filterfun(f1)
+
+gIndex=which(genefilter(geneRpkm,flist))
+
+abundance_red<-as.data.frame(geneRpkm[gIndex,])
+
+yExprs = log2(abundance_red+1) # Expression normalization
+
+rse_gene_RiboZero = rse_gene_RiboZero[gIndex,]
+
+# Create gene identifiers:
+
+ID<-as.data.frame(rowRanges(rse_gene))
+ID<-rownames_to_column(ID,var="Rownames_abundance")
+
+z<- ID$Rownames_abundance %in% rownames(yExprs)
+
+# Change gencode ID with symbol ID:
+
+Gene_IDs<-ID[z,]
+
+Gene_Symbol<-Gene_IDs$Symbol
+datExpr_Symbol<-cbind(Gene_Symbol,yExprs)
+
+Gene_Symbol<-as.data.frame(unique(datExpr_Symbol[,1]))
+names(Gene_Symbol)<-"Gene_Symbol"
+
+datExpr_Symbol<-datExpr_Symbol[!duplicated(datExpr_Symbol$Gene_Symbol),]
+datExpr_Symbol<-datExpr_Symbol[-3,]
+
+rownames(datExpr_Symbol)=NULL
+datExpr_Symbol<-column_to_rownames(datExpr_Symbol,var="Gene_Symbol")
+
+Gene_Symbol<-as.data.frame(rownames(datExpr_Symbol))
+names(Gene_Symbol)<-"Symbol"
+
+Final_Gene_IDs<-join(Gene_Symbol,Gene_IDs,by="Symbol",type="inner")
+Final_Gene_IDs<-Final_Gene_IDs[!duplicated(Final_Gene_IDs$Symbol),]
+
+identical(Final_Gene_IDs$Symbol,rownames(datExpr_Symbol)) # Sanity check
+
+# Remove expression outliers from (log2tr + 1) data:
+
+thresholdZ.k = -4   # This is the more lenient threshold                  
+dist = dist(t(datExpr_Symbol))
+tree = hclust(dist, method = "a")
+Z.k = -scale(colSums(as.matrix(dist)));
+sum(Z.k < thresholdZ.k) # This gives you actually the number of outliers
+min(Z.k)  
+
+plotClusterTreeSamples(t(datExpr_Symbol),main="Sample clustering to detect outliers log2tr",sub="",xlab="",
+                       cex.lab=1.5,cex.axis=1.5,cex.main=1.5)
+
+# Plot a line to show the cut
+
+abline=c(80,100) # 80 for DLPFC, 100 for hippo, 100 for Caudate
+abline(h = abline, col = "red");  
+
+# Determine the cluster under the line
+
+clust = cutreeStatic(tree, cutHeight = abline, minSize = 10); 
+table(clust)
+
+# clust 1 contains the samples we want to keep.
+
+keepSamples = (clust==1)
+datExpr_minusOutliers=datExpr_Symbol[,keepSamples]
+
+# Repeat:
+
+dist = dist(t(datExpr_minusOutliers))
+tree = hclust(dist, method = "a")
+Z.k = -scale(colSums(as.matrix(dist)));
+sum(Z.k < thresholdZ.k) # This gives you actually the number of outliers
+min(Z.k) 
+
+# Check normalization:
+
+meanSdPlot(as.matrix(datExpr_minusOutliers))
+
+RNum<-colnames(datExpr_minusOutliers)
+
+# DLPFC and Caudate
+RNum<-as.data.frame(gsub("_.*","",RNum))
+names(RNum)<-"RNum"
+
+colnames(datExpr_minusOutliers)<-RNum$RNum
+
+# Create the metadata table for each brain region
+
+RNum<-as.data.frame(RNum)
+Metadata<-as.data.frame(colData(rse_gene_RiboZero))
+Metadata<-join(RNum,Metadata,by="RNum",type="inner")
+
+colnames(datExpr_minusOutliers)<-RNum$RNum
+
+identical(Metadata$RNum,colnames(datExpr_minusOutliers)) # Sanity check:
+TRUE
+
+# Create the variables table to include also genomic PCs:
+
+LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec <- read.delim("/directory/LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec.txt")
+ancestry<-LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec
+
+index<-ancestry$IID %in% Metadata$BrNum
+
+ancestry<-ancestry[index,]
+ancestry<-ancestry[,-c(1,13:22)]
+
+names(ancestry)<-c("BrNum","snpPC1","snpPC2","snpPC3","snpPC4","snpPC5","snpPC6",
+                   "snpPC7","snpPC8","snpPC9","snpPC10")
+
+Metadata<-join(Metadata,ancestry,by="BrNum",type="inner")
+
+RNum_final<-Metadata$RNum
+
+index<-colnames(datExpr_minusOutliers) %in% RNum_final
+
+datExpr_minusOutliers<-datExpr_minusOutliers[,index]
+
+identical(Metadata$RNum,colnames(datExpr_minusOutliers)) # Sanity check
+
+
+# Add qSVs for the three regions 
+
+cov_rse<-list(cov_rse_dlpfc,cov_rse_hippo,cov_rse_caudate)
+
+colnames(cov_rse[[1]])
+colnames(cov_rse[[1]])<-gsub("_.*","",colnames(cov_rse[[1]]))
+
+cov_rse_region<-cov_rse[[1]][,RNum_final]
+
+
+# Load the metadata for the three regions
+# Create the table with demographics and technical covariates
+
+dt<-table1(~ Age + RIN + factor(Race) +
+       factor(Sex) + PMI | Region*Dx, data = Metadata_3regs, overall = FALSE)
+
+dt<-as.data.frame(dt)
+
+library(openxlsx)
+wb <- createWorkbook()
+addWorksheet(wb, "summary")
+
+writeData(wb, "summary", x = dt)
+saveWorkbook(wb, "Demographics_and_technical_covariates.xlsx", overwrite = TRUE)
+
+collectGarbage()
+
+
+###### Check the sample overlap across the 3 regions #############
+
+# Load the metadata for the three regions
+# Samples:
+
+BrNum_DLPFC<-Metadata_DLPFC$BrNum
+BrNum_Hippo<-Metadata_Hippo$BrNum
+BrNum_Caudate<-Metadata_Caudate$BrNum
+
+library(VennDiagram)
+
+x<-list(BrNum_DLPFC=BrNum_DLPFC,BrNum_Caudate=BrNum_Caudate,
+        BrNum_Hippo=BrNum_Hippo)
+
+ov<-calculate.overlap(x)
+
+venn.plot <- venn.diagram(
+  x=x,
+  filename = NULL,
+  lwd = 1,
+  fill = c("cornflowerblue", "darkorchid1",'lightgreen'),
+  alpha = 0.75,
+  label.col = "blue",
+  cex = 2, 
+  fontfamily = "serif",
+  fontface = "bold",
+  cat.col = c("cornflowerblue", "darkorchid1",'lightgreen'),
+  cat.cex = 1.5,
+  cat.fontfamily = "serif",
+  cat.fontface = "bold",
+  cat.dist = c(0.03, 0.03, 0.03),
+  cat.pos = c(-20, 14, -180)
+)
+
+grid.draw(venn.plot)
+
+dev.off()
+
+
+#### Prepare data for cleaningY ######
+
+rm(list = ls()) ## Clear workspace
+
+collectGarbage()
+
+# Load the metadata for the three regions
+# Load the normalized, no outliers expression data for the three regions:
+# Calculate the qSVs from degradation matrices:
+
+colnames(datExpr_minusOutliers)
+
+covMat<-list(cov_rse_dlpfc,cov_rse_hippo,cov_rse_caudate)
+
+covMat<-as.data.frame(assays(covMat[[1]]))
+colnames(covMat)
+
+RNum<-as.data.frame(gsub("_.*","",colnames(covMat)))
+names(RNum)<-"RNum"
+
+colnames(covMat)<-RNum$RNum
+
+names(covMat)
+
+covMat_log = log2(covMat[,-c(1:2)] +1)
+
+identical(colnames(covMat_log),colnames(datExpr_minusOutliers)) # Sanity check
+# TRUE
+
+mod = as.matrix(rep(1,length(colnames(covMat_log))))
+
+set.seed(24)
+
+k = num.sv(covMat_log, mod) 
+
+# k=11 for DLPFC, k=14 for hippo, k=11 for caudate
+k=c(11,14)
+
+degPca = prcomp(t(covMat_log))
+qSVs=degPca$x[,1:k]
+colnames(qSVs) = paste0("PC", 1:ncol(qSVs))
+
+qSV<-as.data.frame(qSVs)
+qSV<-rownames_to_column(qSV,var="RNum")
+
+Metadata_Region<-c("DLPFC","Hippocampus","Caudate")
+info<-join(Metadata_Region[1],qSV,by="RNum",type="inner")
+identical(info$RNum,colnames(datExpr_minusOutliers))
+
+collectGarbage()
+
+# Split expression data by diagnosis:
+
+CTRL_index<-which(info$Dx=="Control")
+datExpr_CTRL<-t(datExpr_minusOutliers)[CTRL_index,]
+SCZ_index<-which(info$Dx=="SCZD")
+datExpr_SCZ<-t(datExpr_minusOutliers)[SCZ_index,]
+
+# Save files and clear workspace
+
+rm(list = ls()) ## Clear workspace
+collectGarbage()
+
+
+###### Multicolinearity assessment DLPFC, Hippo, Caudate #####
+
+# Load the uncleaned expression data for the entire dataset:
+# DLPFC 297 samples, Hippocampus 250 samples, Caudate 349 samples
+# Load metadata
+
+names(Metadata_Region[1])
+geneExpr<-c("DLPFC","Hippocampus","Caudate") # Expression data for each brain region
+
+form<-~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
+
+# Select variables from the Metadata files and create the info table;
+# Use heatmap from variance partition for a simple visualization of correlated traits
+
+C = canCorPairs(form,info=info)
+
+plotCorrMatrix( C,dendrogram="none" ) 
+
+# Check the Variation Inflation Factor (VIF):
+
+library(car)
+
+expr<-t(geneExpr[1])
+
+fit_gene<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+               snpPC8 + snpPC9 + snpPC10,data=info)
+
+
+vif(fit_gene) # Check for multicollinearity
+
+collectGarbage()
+
+# Linear models to be used for expression "cleaning" after removing collinear variables:
+# DLPFC:
+
+form_red<-~ Dx + Age + Sex + mitoRate + RIN +
+  PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
+
+fit_gene2<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + RIN +
+               PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+               snpPC8 + snpPC9 + snpPC10,data=info)
+
+collectGarbage() 
+
+# Hippocampus:
+
+form_red<-~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN +
+  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
+
+fit_gene2<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN +
+               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+               snpPC8 + snpPC9 + snpPC10,data=info)
+
+# Caudate:
+
+form_red<-~ Dx + Age + Sex + mitoRate + RIN +
+  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
+
+fit_gene2<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + RIN +
+                PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+                snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                snpPC8 + snpPC9 + snpPC10,data=info)
+
+collectGarbage() 
+
+vif(fit_gene2) # Check for again multicollinearity
+
+collectGarbage() 
+
+#### Clean the expression data based on multicolinearity assessment DLPFC ######
+
+covs = "~ Dx + Sex + Race + Age + RIN + mitoRate + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + 
+snpPC7 + snpPC8 + snpPC9 + snpPC10 + PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + 
+PC9 + PC10 + PC11"
+
+mod = model.matrix(as.formula(covs), data = info)
+
+# Protect the diagnosis:
+
+cleanExprs_protectDx = jaffelab::cleaningY(geneExpr[1], mod, P=2) # All variables removed, except for dx and intercept that are protected
+
+# Save the cleaned expression data and covariates
+
+#### Clean the expression data based on multicolinearity assessment Hippocampus ######
+
+covs = "~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + 
+               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 +
+               + PC13 + PC14 + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+               snpPC8 + snpPC9 + snpPC10"
+
+mod = model.matrix(as.formula(covs), data = info)
+
+# Protect the diagnosis:
+
+cleanExprs_protectDx = jaffelab::cleaningY(geneExpr[2], mod, P=2) # All variables removed, except for dx and intercept that are protected
+
+# Save the cleaned expression data and covariates
+
+#### Clean the expression data based on multicolinearity assessment Caudate ######
+
+covs = "~ Dx + Age + Sex + mitoRate + RIN + 
+               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + 
+               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+               snpPC8 + snpPC9 + snpPC10"
+
+mod = model.matrix(as.formula(covs), data = info)
+
+# Protect the diagnosis:
+
+
+cleanExprs_protectDx = jaffelab::cleaningY(geneExpr[3], mod, P=2) # All variables removed, except for dx and intercept that are protected
+
+# Save the cleaned expression data and covariates
+
+
 
