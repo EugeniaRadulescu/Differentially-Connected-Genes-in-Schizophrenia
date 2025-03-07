@@ -1,1 +1,253 @@
+###### Consensus from CTRL and SCZ bootstraps; robust WGCNA ######
+
+# Load the 50 gene expression sets for each clinical group and region:
+# Create the consensus network
+
+_byDx<-c("CTRL","SCZ")
+
+consTOM_byDx<-consensusTOM(multiExpr=multiExpr, # Use the 50 sets of expression for each Dx group
+                          maxBlockSize = 25000,
+                          randomSeed = 54321,
+                          nThreads = 10,
+                          corType="bicor",
+                          power=10, # For DLPFC and Caudate; 14 for Hippocampus
+                          networkType = "signed",
+                          #TOMType = "signed",
+                          saveIndividualTOMs = FALSE,
+                          networkCalibration = "single quantile",
+                          consensusQuantile = 0.5,
+                          calibrationQuantile = 0.95,
+                          saveConsensusTOMs = TRUE,
+                          returnTOMs = TRUE,
+                          verbose = 3)
+# Save the six Dx by region consensus networks:
+
+###### Module detection for consensus in each Dx group for a general characterization of modules ###########
+
+# Load the consensus networks, calculate the dissimilarity, and perform module detection for each diagnosis and brain region:
+
+minModuleSize = 50;
+
+consensusTOM<-as.matrix(consTOM_CTRL[[1]][[1]])
+rm(consTOM_CTRL)
+collectGarbage()
+dissTOM<-1-consensusTOM
+
+# Save dissTOM and clear the workspace
+# Of note, networks from rWGCNA are usually large files, approx. 3GB
+
+# Re-load the dissTOM
+
+consTree = hclust(as.dist(dissTOM), method = "average");
+
+rm(consensusTOM)
+
+# Module identification using dynamic tree cut:
+
+unmergedLabels = cutreeDynamic(dendro = consTree, distM = dissTOM,
+                               deepSplit = 3, cutHeight = 0.995,
+                               minClusterSize = minModuleSize,
+                               pamRespectsDendro = TRUE );
+unmergedColors = labels2colors(unmergedLabels)
+collectGarbage()
+
+counts_SCZ<-table(unmergedColors)
+counts_CTRL<-table(unmergedColors)
+
+sizeGrWindow(8,6)
+plotDendroAndColors(consTree, unmergedColors, "Dynamic Tree Cut",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+
+consTree_CTRL<-consTree
+unmergedLabels_CTRL<-unmergedLabels
+unmergedColors_CTRL<-unmergedColors
+
+sizeGrWindow(8,6)
+plotDendroAndColors(consTree_SCZ, colors=cbind(unmergedColors_CTRL,unmergedColors_SCZ),c("mods_CTRL","mods_SCZ"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+
+counts_SCZ
+
+# Save the consensus trees, modules for future analyses
+
+
+##### Calculate eigengenes and merge modules if necessary ########
+
+# Load expression data, consensus trees and modules:
+_Dx<-c("CTRL","SCZ")
+
+unmergedMEs_Dx = multiSetMEs(multiExpr, colors = NULL, universalColors = unmergedColors_Dx)
+
+collectGarbage()
+
+consMEDiss_Dx = consensusMEDissimilarity(unmergedMEs_Dx)
+
+consMETree_Dx = hclust(as.dist(consMEDiss_Dx), method = "average");
+
+# Plot the result
+
+sizeGrWindow(7,6)
+par(mfrow = c(1,1))
+plot(consMETree_Dx, main = "Consensus clustering of consensus module eigengenes for Dx",
+     xlab = "", sub = "")
+abline(h=0.4, col = "red")
+
+merge_Dx = mergeCloseModules(multiExpr, unmergedLabels_Dx, cutHeight = 0.4, verbose = 3)
+
+# Numeric module labels
+moduleLabels_merged_Dx = merge_Dx$colors;
+
+# Convert labels to colors
+moduleColors_merged_Dx = labels2colors(moduleLabels_merged_Dx)
+
+# Eigengenes of the new merged modules:
+consMEs_merged_Dx = merge_Dx$newMEs
+
+sizeGrWindow(9,6)
+plotDendroAndColors(consTree_Dx, cbind(unmergedColors_Dx, moduleColors_merged_Dx),
+                    c("Unmerged", "Merged"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+
+save(consMEs_merged_Dx, moduleColors_merged_Dx, moduleLabels_merged_Dx, consTree_Dx, file = "Consensus-NetworkConstruction_merged_Modules_Dx.RData")
+
+##### Module preservation with WGCNA; CTRL in SCZ ########
+
+# Load expression data, consensus trees and modules:
+collectGarbage()
+
+# Create the multiExpr list:
+
+nSets=2;
+setLabels=c("CTRL","SCZ");
+shortLabels=c("CTRL","SCZ");
+multiExpr=vector(mode="list",length=nSets);
+
+multiExpr[[1]]=list(data=datExpr_CTRL);
+names(multiExpr[[1]]$data)=names(datExpr_CTRL);
+rownames(multiExpr[[1]]$data)=dimnames(datExpr_CTRL)[[1]]
+
+multiExpr[[2]]=list(data=datExpr_SCZ);
+names(multiExpr[[2]]$data)=names(datExpr_SCZ);
+rownames(multiExpr[[2]]$data)=dimnames(datExpr_SCZ)[[1]]
+
+exprSize=checkSets(multiExpr)
+
+colors_CTRL=unmergedColors_CTRL
+colors_SCZ=unmergedColors_SCZ
+
+multiColor = list("CTRL" = colors_CTRL,"SCZ" = colors_SCZ);
+
+mp<-modulePreservation(
+  multiData=multiExpr,
+  multiColor=multiColor,
+  multiWeights = NULL,
+  dataIsExpr = TRUE,
+  networkType = "signed",
+  corFnc = "bicor",
+  corOptions = "use = 'p'",
+  referenceNetworks = 1,
+  testNetworks = NULL,
+  nPermutations = 100,
+  includekMEallInSummary = FALSE,
+  restrictSummaryForGeneralNetworks = TRUE,
+  calculateQvalue = FALSE,
+  randomSeed = 12345,
+  maxGoldModuleSize = 1000,
+  maxModuleSize = 1000,
+  quickCor = 1,
+  ccTupletSize = 2,
+  calculateCor.kIMall = FALSE,
+  calculateClusterCoeff = FALSE,
+  useInterpolation = FALSE,
+  checkData = TRUE,
+  greyName = NULL,
+  goldName = NULL,
+  savePermutedStatistics = TRUE,
+  loadPermutedStatistics = FALSE,
+  permutedStatisticsFile = "permutedStats-actualModules.RData",
+  plotInterpolation = FALSE,
+  discardInvalidOutput = TRUE,
+  parallelCalculation = FALSE,
+  verbose = 3, indent = 0)
+
+# Save preservation results
+
+# Plot summary stats of preservation for the 3 regions
+
+_Region<-c("DLPFC","Hippocampus","Caudate")
+collectGarbage()
+
+par(mfrow=c(1,3))
+par(mar = c(4.5,4.5,2.5,1))
+
+stats = mp_Region$preservation$Z$ref.Set_1$inColumnsAlsoPresentIn.Set_2
+
+stats[order(-stats[,2]),c(1:2)]
+
+# Analyze and plot the preservation results
+
+ref=1;
+test=2;
+
+statsObs = cbind(mp_Region$quality$observed[[ref]][[test]][, -1], mp_Region$preservation$observed[[ref]][[test]][, -1])
+statsZ = cbind(mp_Region$quality$Z[[ref]][[test]][, -1], mp_Region$preservation$Z[[ref]][[test]][, -1]);
+
+collectGarbage()
+
+## Module labels and module sizes are also contained in the results
+
+modColors_Region = rownames(mp_Region$preservation$observed[[ref]][[test]])
+moduleSizes_region = mp_Region$preservation$Z[[ref]][[test]][, 1];
+
+collectGarbage()
+
+
+## leave grey and gold modules out
+plotMods = !(modColors_Region %in% c("grey", "gold"));
+## Text labels for points
+text = modColors_Region[plotMods];
+
+
+plotData2=mp_Region$preservation$Z[[ref]][[test]][,2]
+mains2 = "Preservation Zsummary Region";
+max=max(plotData2)
+min=min(plotData2)
+if (min > -max/10) min = -max/10
+ylim = c(min - 0.1 * (max-min), max + 0.1 * (max-min))
+
+plot(moduleSizes_Region[plotMods], plotData2[plotMods], col = 1, bg = modColors_Region[plotMods], pch = 21,
+     main = mains2,
+     cex = 1.5,
+     ylab = mains2, xlab = "Module size", log = "x",
+     ylim = ylim,
+     xlim = c(10, 2000),cex.lab = 1.2, cex.axis = 1, cex.main =1.2)
+
+
+abline(h=0)
+abline(h=2, col = "red", lty = 2)
+abline(h=7,col="red",lty=2)
+abline(h=10, col = "blue", lty = 2)
+
+plotData1=mp_Region$preservation$observed[[ref]][[test]][, 2]
+Lim=c(1:56)
+mains1 = "Preservation Median rank"
+min = min(Lim, na.rm = TRUE);
+max = max(Lim, na.rm = TRUE);
+{if (min > -max/10) min = -max/10
+ylim = c(max + 0.1 * (max-min), min - 0.1 * (max-min))}
+
+par(mar = c(4.5,4.5,2.5,1))
+
+plot(moduleSizes_Region[plotMods], plotData1[plotMods], col = 1, bg = modColors_Region[plotMods], pch = 21,
+     main = mains1,
+     cex = 1.5,
+     ylab = mains1, xlab = "Module size", log = "x",
+     ylim = ylim,
+     xlim = c(10, 2000),cex.lab = 1.2, cex.axis = 1, cex.main =1.2)
+
+
+
 
