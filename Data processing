@@ -225,7 +225,7 @@ datExpr_minusOutliers<-datExpr_minusOutliers[,index]
 identical(Metadata$RNum,colnames(datExpr_minusOutliers)) # Sanity check
 
 
-# Add qSVs for the three regions 
+# Add cov_rse matrix for the three regions 
 
 cov_rse<-list(cov_rse_dlpfc,cov_rse_hippo,cov_rse_caudate)
 
