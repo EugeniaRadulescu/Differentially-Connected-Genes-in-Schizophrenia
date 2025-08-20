@@ -358,129 +358,282 @@ collectGarbage()
 
 ###### Multicolinearity assessment DLPFC, Hippo, Caudate #####
 
-# Load the uncleaned expression data for the entire dataset:
-# DLPFC 297 samples, Hippocampus 250 samples, Caudate 349 samples
-# Load metadata
+# For DLPFC, Hippocampus, and Caudate Brain Regions      
 
-names(Metadata_Region[1])
-geneExpr<-c("DLPFC","Hippocampus","Caudate") # Expression data for each brain region
+# Load necessary libraries
+library(variancePartition) # For canCorPairs and plotCorrMatrix
+library(limma)           # For lmFit and eBayes
+library(car)             # For vif (Variance Inflation Factor)
+library(RColorBrewer)    # For plotting densities
+library(jaffelab)        # Assuming jaffelab::cleaningY is from this package
 
-form<-~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+# --- 1. Data Loading ---
+
+# Define base path for data files to avoid repetition
+
+base_path <- "/home/edata/.../.../"
+
+# Load DLPFC data
+message("Loading DLPFC data...")
+load(file.path(base_path, "Express_DLPFC_notClean_Symbol_297samples_10202022.RData"))
+load(file.path(base_path, "Expr_data_uncleaned_byDx_22542Genes_10202022.RData"))
+
+# Assuming 'datExpr_minusOutliers' and 'info' are loaded from these files for DLPFC
+
+info_dlpfc<-info
+datExpr_dlpfc<-datExpr_minusOutliers
+
+# Load Hippocampus data
+message("Loading Hippocampus data...")
+load(file.path(base_path, "Hippocampus/Express_hippo_notClean_Symbol_250samples_12152022.RData"))
+load(file.path(base_path, "Hippocampus/Expr_data_uncleaned_byDx_20708Genes_12152022.RData"))
+
+# Assuming these load data appropriate for Hippo (e.g., 'datExpr_hippo' and 'info_hippo')
+info_hippo<-info
+datExpr_hippo<-datExpr_minusOutliers
+
+# Load Caudate data
+message("Loading Caudate data...")
+load(file.path(base_path, "Caudate/Express_Caudate_notClean_Symbol_349samples_12162022.RData"))
+load(file.path(base_path, "Caudate/Expr_data_uncleaned_byDx_19954Genes_12162022.RData"))
+
+# Assuming these load data appropriate for Caudate (e.g., 'datExpr_caudate' and 'info_caudate')
+info_caudate<-info
+datExpr_caudate<-datExpr_minusOutliers
+
+# Load combined metadata for all regions
+message("Loading combined metadata...")
+load(file.path(base_path, "Metadata_3regions_03262024.RData"))
+
+# Display names of loaded metadata (for verification)
+message("\nNames of 'info' (assuming DLPFC context initially):")
+print(names(info_dlpfc)) 
+print(names(info_hippo)) 
+print(names(info_caudate))
+
+message("Names of 'Metadata_Caudate':")
+print(names(Metadata_Caudate)) # This suggests separate metadata objects might be intended.
+
+# --- 2. Multicollinearity Assessment - General Approach ---
+
+# Assign expression data for initial check (assuming DLPFC data is active)
+# It's important to ensure 'datExpr_minusOutliers' and 'info' correspond to the same dataset.
+
+datExpr_minusOutliers<-list("DLPFC"=datExpr_dlpfc,"Hippo"=datExpr_hippo,"Caudate"=datExpr_caudate)
+info<-list("DLPFC"=info_dlpfc,"Hippo"=info_hippo,"Caudate"=info_caudate)
+
+geneExpr <- datExpr_minusOutliers[[1]] # This likely comes from the *last* loaded expression data.
+# If processing DLPFC first, it should be the DLPFC data.
+
+# Define the full formula for multicollinearity assessment
+form_full <- ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
   PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
   snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
   snpPC8 + snpPC9 + snpPC10
 
-# Select variables from the Metadata files and create the info table;
-# Use heatmap from variance partition for a simple visualization of correlated traits
+message("\nPerforming initial multicollinearity assessment (full model)...")
 
-C = canCorPairs(form,info=info)
+# Calculate canonical correlations between pairs of variables in the formula
+C_full <- canCorPairs(form_full, info[[1]])
+plotCorrMatrix(C_full, dendrogram = "none",
+               main = "Canonical Correlations (Full Model)")
+message("Correlation matrix plotted for the full model.")
 
-plotCorrMatrix( C,dendrogram="none" ) 
+# Fit a linear model for VIF calculation (using an arbitrary gene, expr[,2])
+# Transpose geneExpr for lm: samples as rows, genes as columns
+expr_transposed <- t(geneExpr)
 
-# Check the Variation Inflation Factor (VIF):
+fit_gene_full <- lm(expr_transposed[, 2] ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+                      PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+                      snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                      snpPC8 + snpPC9 + snpPC10, data = info[[1]])
 
-library(car)
+message("VIF values for the full model:")
+print(vif(fit_gene_full)) # Check for multicollinearity
+collectGarbage() # Free up memory
 
-expr<-t(geneExpr[1])
+# --- 3. Region-Specific Multicollinearity Assessment and Data Cleaning ---
 
-fit_gene<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
-               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
-               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-               snpPC8 + snpPC9 + snpPC10,data=info)
+# --- 3.1 DLPFC Analysis ---
+
+message("\n--- Analyzing DLPFC ---")
+# Reload DLPFC specific data to ensure correct 'datExpr_minusOutliers' and 'info'
+# load(file.path(base_path, "Express_DLPFC_notClean_Symbol_297samples_10202022.RData"))
+# load(file.path(base_path, "Expr_data_uncleaned_byDx_22542Genes_10202022.RData"))
+# load(file.path(base_path, "Metadata_3regions_03262024.RData")) # Reload combined metadata
+
+# Ensure 'info' is specific to DLPFC here, potentially subsetting Metadata_3regions.
+# For example, info_dlpfc <- Metadata_3regions[Metadata_3regions$Region == "DLPFC", ]
+# For simplicity, assuming 'info' and 'datExpr_minusOutliers' are correctly set by loads.
 
 
-vif(fit_gene) # Check for multicollinearity and remove variables with VIF>10
+geneExpr_dlpfc <- datExpr_minusOutliers[[1]]
 
-collectGarbage()
-
-# Linear models to be used for expression "cleaning" after removing collinear variables:
-# DLPFC:
-
-form_red<-~ Dx + Age + Sex + mitoRate + RIN +
+# Reduced formula for DLPFC based on prior assessment
+form_red_dlpfc <- ~ Dx + Age + Sex + mitoRate + RIN +
   PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
   snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
   snpPC8 + snpPC9 + snpPC10
 
-fit_gene2<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + RIN +
-               PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
-               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-               snpPC8 + snpPC9 + snpPC10,data=info)
+message("Fitting reduced model for DLPFC and checking VIF...")
+fit_gene_dlpfc_red <- lm(t(geneExpr_dlpfc)[, 2] ~ Dx + Age + Sex + mitoRate + RIN +
+                           PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+                           snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                           snpPC8 + snpPC9 + snpPC10, data = info[[1]]) # Make sure 'info' is DLPFC-specific
+print(vif(fit_gene_dlpfc_red))
+collectGarbage()
 
-collectGarbage() 
+message("Plotting correlation matrix for reduced DLPFC model...")
+C2_dlpfc <- canCorPairs(form_red_dlpfc, info[[1]])
+plotCorrMatrix(C2_dlpfc, dendrogram = "none",
+               main = "Canonical Correlations (DLPFC Reduced Model)")
+collectGarbage()
 
-# Hippocampus:
-
-form_red<-~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN +
-  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
-  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-  snpPC8 + snpPC9 + snpPC10
-
-fit_gene2<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN +
-               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
-               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-               snpPC8 + snpPC9 + snpPC10,data=info)
-
-# Caudate:
-
-form_red<-~ Dx + Age + Sex + mitoRate + RIN +
-  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
-  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-  snpPC8 + snpPC9 + snpPC10
-
-fit_gene2<-lm(expr[,2]~ Dx + Age + Sex + mitoRate + RIN +
-                PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
-                snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-                snpPC8 + snpPC9 + snpPC10,data=info)
-
-collectGarbage() 
-
-vif(fit_gene2) # Check for again multicollinearity
-
-collectGarbage() 
-
-#### Clean the expression data based on multicolinearity assessment DLPFC ######
-
-covs = "~ Dx + Sex + Race + Age + RIN + mitoRate + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + 
-snpPC7 + snpPC8 + snpPC9 + snpPC10 + PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + 
+# Clean the DLPFC expression data
+message("Cleaning DLPFC expression data...")
+covs_dlpfc <- "~ Dx + Sex + Race + Age + RIN + mitoRate + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 +
+snpPC7 + snpPC8 + snpPC9 + snpPC10 + PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 +
 PC9 + PC10 + PC11"
 
-mod = model.matrix(as.formula(covs), data = info)
+mod_dlpfc <- model.matrix(as.formula(covs_dlpfc), data = info[[1]]) # Ensure 'info' is correct for DLPFC
+cleanExprs_protectDx_dlpfc <- jaffelab::cleaningY(geneExpr_dlpfc, mod_dlpfc, P = 2)
 
-# Protect the diagnosis:
+# save(cleanExprs_protectDx_dlpfc, info, covs_dlpfc, mod_dlpfc,
+#      file = "cleanExprs_traits_297br_RiboZero_noCellType_correction_10202022.RData")
+message("Cleaned DLPFC data saved.")
 
-cleanExprs_protectDx = jaffelab::cleaningY(geneExpr[1], mod, P=2) # All variables removed, except for dx and intercept that are protected
+# --- 3.2 Hippocampus Analysis ---
 
-# Save the cleaned expression data and covariates
+message("\n--- Analyzing Hippocampus ---")
+# Reload Hippocampus specific data
+# load(file.path(base_path, "Hippocampus/Express_hippo_notClean_Symbol_250samples_12152022.RData"))
+# load(file.path(base_path, "Hippocampus/Expr_data_uncleaned_byDx_20708Genes_12152022.RData"))
+# load(file.path(base_path, "Metadata_3regions_03262024.RData")) # Reload combined metadata
 
-#### Clean the expression data based on multicolinearity assessment Hippocampus ######
+geneExpr_hippo <- datExpr_minusOutliers[[2]]
 
-covs = "~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + 
-               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 +
-               + PC13 + PC14 + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-               snpPC8 + snpPC9 + snpPC10"
+# Define the full formula for multicollinearity assessment
 
-mod = model.matrix(as.formula(covs), data = info)
+print(names(info_hippo))
 
-# Protect the diagnosis:
+form_full <- ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 + PC13 + PC14 +
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
 
-cleanExprs_protectDx = jaffelab::cleaningY(geneExpr[2], mod, P=2) # All variables removed, except for dx and intercept that are protected
+message("\nPerforming initial multicollinearity assessment (full model)...")
 
-# Save the cleaned expression data and covariates
+# Calculate canonical correlations between pairs of variables in the formula
+C_full <- canCorPairs(form_full, info[[2]])
+plotCorrMatrix(C_full, dendrogram = "none",
+               main = "Canonical Correlations (Full Model)")
+message("Correlation matrix plotted for the full model.")
 
-#### Clean the expression data based on multicolinearity assessment Caudate ######
+# Fit a linear model for VIF calculation (using an arbitrary gene, expr[,2])
+# Transpose geneExpr for lm: samples as rows, genes as columns
 
-covs = "~ Dx + Age + Sex + mitoRate + RIN + 
-               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + 
-               snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
-               snpPC8 + snpPC9 + snpPC10"
+expr_transposed <- t(geneExpr_hippo)
 
-mod = model.matrix(as.formula(covs), data = info)
+fit_gene_full <- lm(expr_transposed[, 2] ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+                      PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 + PC13 + PC14 +
+                      snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                      snpPC8 + snpPC9 + snpPC10, data = info[[2]])
 
-# Protect the diagnosis:
-
-cleanExprs_protectDx = jaffelab::cleaningY(geneExpr[3], mod, P=2) # All variables removed, except for dx and intercept that are protected
-
-# Save the cleaned expression data and covariates
-
+message("VIF values for the full model:")
+print(vif(fit_gene_full)) # Check for multicollinearity
+collectGarbage() # Free up memory
 
 
+form_red_hippo <- ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN +
+  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 + PC13 + PC14 +
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
+
+message("Fitting reduced model for Hippocampus and checking VIF...")
+fit_gene_hippo_red <- lm(t(geneExpr_hippo)[, 2] ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN +
+                           PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 + PC13 + PC14 +
+                           snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                           snpPC8 + snpPC9 + snpPC10, data = info[[2]]) # Ensure 'info' is Hippo-specific
+print(vif(fit_gene_hippo_red))
+collectGarbage()
+
+message("Plotting correlation matrix for reduced Hippocampus model...")
+C2_hippo <- canCorPairs(form_red_hippo, info_hippo)
+plotCorrMatrix(C2_hippo, dendrogram = "none",
+               main = "Canonical Correlations (Hippocampus Reduced Model)")
+collectGarbage()
+
+# Clean the Hippocampus expression data
+message("Cleaning Hippocampus expression data...")
+covs_hippo <- "~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN +
+PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 +
+PC13 + PC14 + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+snpPC8 + snpPC9 + snpPC10"
+
+mod_hippo <- model.matrix(as.formula(covs_hippo), data = info[[2]]) # Ensure 'info' is correct for Hippo
+cleanExprs_protectDx_hippo <- jaffelab::cleaningY(geneExpr_hippo, mod_hippo, P = 2)
+
+# save(cleanExprs_protectDx_hippo, info, covs_hippo, mod_hippo,
+#      file = "cleanExprs_traits_250br_Hippo_noCellType_correction_12152022.RData")
+message("Cleaned Hippocampus data saved.")
+
+# --- 3.3 Caudate Analysis ---
+
+message("\n--- Analyzing Caudate ---")
+# Reload Caudate specific data
+# load(file.path(base_path, "Caudate/Express_Caudate_notClean_Symbol_349samples_12162022.RData"))
+# load(file.path(base_path, "Caudate/Expr_data_uncleaned_byDx_19954Genes_12162022.RData"))
+# load(file.path(base_path, "Metadata_3regions_03262024.RData")) # Reload combined metadata
+
+expr_transposed <- t(geneExpr_caudate)
+
+print(names(info_caudate))
+
+form_full <- ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + 
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
+
+message("\nPerforming initial multicollinearity assessment (full model)...")
+
+fit_gene_full <- lm(expr_transposed[, 2] ~ Dx + Age + Sex + mitoRate + totalAssignedGene + RIN + rRNA_rate +
+                      PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+                      snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                      snpPC8 + snpPC9 + snpPC10, data = info[[3]])
+
+message("VIF values for the full model:")
+print(vif(fit_gene_full)) # Check for multicollinearity
+collectGarbage() # Free up memory
+
+form_red_caudate <- ~ Dx + Age + Sex + mitoRate + RIN +
+  PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+  snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+  snpPC8 + snpPC9 + snpPC10
+
+message("Fitting reduced model for Caudate and checking VIF...")
+fit_gene_caudate_red <- lm(t(geneExpr_caudate)[, 2] ~ Dx + Age + Sex + mitoRate + RIN +
+                             PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+                             snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                             snpPC8 + snpPC9 + snpPC10, data = info[[3]]) # Ensure 'info' is Caudate-specific
+print(vif(fit_gene_caudate_red))
+collectGarbage()
+
+message("Plotting correlation matrix for reduced Caudate model...")
+C2_caudate <- canCorPairs(form_red_caudate, info)
+plotCorrMatrix(C2_caudate, dendrogram = "none",
+               main = "Canonical Correlations (Caudate Reduced Model)")
+collectGarbage()
+
+# Clean the Caudate expression data
+message("Cleaning Caudate expression data...")
+covs_caudate <- "~ Dx + Age + Sex + mitoRate + RIN +
+PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+snpPC8 + snpPC9 + snpPC10"
+
+mod_caudate <- model.matrix(as.formula(covs_caudate), data = info[[3]]) # Ensure 'info' is correct for Caudate
+cleanExprs_protectDx_caudate <- jaffelab::cleaningY(geneExpr_caudate, mod_caudate, P = 2)
+
+# save(cleanExprs_protectDx_caudate, info, covs_caudate, mod_caudate,
+#      file = "cleanExprs_traits_349br_Caudate_noCellType_correction_12162022.RData")
+message("Cleaned Caudate data saved.")
