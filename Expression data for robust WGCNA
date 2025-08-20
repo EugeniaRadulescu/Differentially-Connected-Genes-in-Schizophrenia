@@ -110,20 +110,18 @@ collectGarbage()
 ##### Bootstrap the expression data for consensus analysis ######
 
 # Load multiExpression data and perform bootstrapping for CTRL and SCZ
-Bootstrap_Dx<-c("CTRL,"SCZ)
+Dx<-c("CTRL","SCZ")
 
 collectGarbage()
 
 set.seed(0924)
 
 nsets<-50
-Bootstrap_Dx<-vector(mode = "list",length = nsets)
+Bootstrap_Dx<-vector(mode = "list",length = nsets) # One set of 50 expression files for CTRL, and one set for SCZ
 
 for(i in 1:nsets){
-  
   Bootstrap_Dx[[i]]<-datExpr_Dx[sample.int(nrow(datExpr_Dx), replace=T),]
-  
-}
+  }
 
 collectGarbage()
 
@@ -146,7 +144,7 @@ exprSize=checkSets(multiExpr)
 
 rm(Bootstrap_Dx)
 
-# Save the 50 expression sets
+# Save the 50 expression sets for each clinical group.
 
 
 
