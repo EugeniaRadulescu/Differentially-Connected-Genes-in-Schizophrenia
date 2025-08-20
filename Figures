@@ -1,1 +1,96 @@
 Code used to create main and supplementary figures
+
+##### Supplementary figure S1 ########
+
+analyze_WGCNA_regions <- function(region_name) {
+  
+  # Set the base directory for the data files.
+  base_path <- "/home/edata/.../.../"
+  
+  # Construct the full path to the data file.
+  file_path <- file.path(base_path, "Consensus_tree_modulesColors_expr_CTRL_SCZ_10312022.RData")
+  
+  # Load the data from the specified file path.
+  # This assumes the file contains objects like unmergedLabels_CTRL, unmergedLabels_SCZ, etc.
+  load(file_path)
+  
+  # Re-label the consensus modules to match the CTRL-only analysis.
+  modLabCTRL_SCZ <- WGCNA::matchLabels(unmergedLabels_CTRL, unmergedLabels_SCZ)
+  moduleColorsCTRL_SCZ <- WGCNA::labels2colors(modLabCTRL_SCZ)
+  
+  # Create a data frame of module colors for plotting dendrograms.
+  datColors <- data.frame(moduleColorsCTRL_SCZ, unmergedColors_SCZ, unmergedColors_CTRL)
+  
+  # Calculate module overlap tables.
+  ovTable <- WGCNA::overlapTable(moduleColorsCTRL_SCZ, unmergedColors_SCZ)
+  ovTable1 <- WGCNA::overlapTable(moduleColorsCTRL_SCZ, unmergedColors_CTRL)
+  
+  # Prepare text matrices for the heatmaps.
+  textMatrix <- paste(signif(ovTable$pTable, 2))
+  dim(textMatrix) <- dim(ovTable$pTable)
+  
+  textMatrix1 <- paste(signif(ovTable1$pTable, 2))
+  dim(textMatrix1) <- dim(ovTable1$pTable)
+  
+  # Create plots.
+  # Set up the plotting window and margins for the heatmaps.
+  sizeGrWindow(12, 10)
+  par(mar = c(6, 8.5, 3, 3))
+  
+  # Plot the first heatmap for matched labels vs. SCZ modules.
+  WGCNA::labeledHeatmap(Matrix = ovTable$pTable,
+                 xLabels = colnames(ovTable$pTable),
+                 xSymbols = colnames(ovTable$pTable),
+                 yLabels = rownames(ovTable$pTable),
+                 ySymbols = rownames(ovTable$pTable),
+                 colorLabels = FALSE,
+                 colors = greenWhiteRed(50),
+                 textMatrix = textMatrix,
+                 setStdMargins = FALSE,
+                 cex.text = 0.5,
+                 zlim = c(-1, 1),
+                 main = paste("pValues for matched labels SCZ", region_name))
+
+  # Plot the second heatmap for matched labels vs. CTRL modules.
+  WGCNA::labeledHeatmap(Matrix = ovTable1$pTable,
+                 xLabels = colnames(ovTable1$pTable),
+                 xSymbols = colnames(ovTable1$pTable),
+                 yLabels = rownames(ovTable1$pTable),
+                 ySymbols = rownames(ovTable1$pTable),
+                 colorLabels = FALSE,
+                 colors = greenWhiteRed(50),
+                 textMatrix = textMatrix1,
+                 setStdMargins = FALSE,
+                 cex.text = 0.5,
+                 zlim = c(-1, 1),
+                 main = paste("pValues for matched labels CTRL", region_name))
+                 
+  # Plot dendrograms with module colors.
+  plotDendroAndColors(consTree_CTRL, datColors, c("matched modules", "SCZ modules", "CTRL modules"),
+                      dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05,
+                      main = paste("CTRL gene dendrogram and module colors for", region_name))
+  
+  plotDendroAndColors(consTree_SCZ, datColors, c("matched modules", "SCZ modules", "CTRL modules"),
+                      dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05,
+                      main = paste("SCZ gene dendrogram and module colors for", region_name))
+  
+  # Prepare the data frame for saving.
+  Symbol <- colnames(multiExpr[[1]]$data)
+  datColors$Symbol <- Symbol
+  datColors <- datColors[order(datColors$moduleColorsCTRL_SCZ, datColors$unmergedColors_SCZ, datColors$unmergedColors_CTRL), ]
+  
+  # Save the relevant objects to a new RData file.
+  output_filename <- paste0("Matched_color_modules_CTRL_SCZ_forClProfiler_", format(Sys.Date(), "%m%d%Y"), ".RData")
+  save(datColors, ovTable, ovTable1, textMatrix, textMatrix1, Symbol, file = output_filename)
+  
+  # Print confirmation message.
+  cat("Analysis complete for", region_name, ". Results saved to", output_filename, "\n")
+  
+  # Return the ordered data frame if needed for further use.
+  invisible(datColors)
+}
+
+# Apply the function for each brain region:
+# Example for "DLPFC"
+analyze_WGCNA_regions("DLPFC")
+
