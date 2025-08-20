@@ -1,0 +1,197 @@
+
+####### Differential Gene Expression Analysis #######
+
+
+message("\n--- Performing Differential Gene Expression Analysis ---")
+
+NotCleanExprProtDx<-list("DLPFC"=datExpr_dlpfc,
+                         "Hippo"=datExpr_hippo,
+                         "Caudate"=datExpr_caudate)
+
+y <- NotCleanExprProtDx[[i]] # The log2tr expression data for DLPFC, hippo, caudate
+
+# Specifically for Caudate, stratify by antipsychotics:
+
+y<-datExpr_caudate
+
+Cohort_used_for_Caudate_in_NN_paper <- read.csv("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Cohort_used_for_Caudate_in_NN_paper.csv")
+info_caudate<-join(info_caudate,Cohort_used_for_Caudate_in_NN_paper,by="BrNum",type="left")
+names(info_caudate)
+identical(info_caudate$RNum,colnames(datExpr_caudate))
+table(info_caudate$antipsychotics)
+info_caudate<-info_caudate[,c(1:66,84)]
+
+# Add a new variable 'Dx_byAP' based on conditions of 'Dx' and 'antipsychotics':
+
+info_caudate <- info_caudate %>%
+  mutate(
+    AP = case_when(
+      Dx == "SCZD" & antipsychotics == "TRUE" ~ "SCZ_with_AP",
+      Dx == "Control" ~ "CTRL",
+      TRUE ~ "Other" # Default case if no other conditions are met
+    )
+  )
+
+info_caudate$AP<-as.factor(info_caudate$AP)
+class(info_caudate$AP)
+
+# View the updated data frame
+print(info_caudate)
+table(info_caudate$AP)
+
+# 'mod' should be the one loaded from the cleaned data files
+# Create a list with models for each region:
+
+mod<-list(mod_dlpfc=mod_dlpfc,mod_hippo=mod_hippo,mod_caudate=mod_caudate)
+
+# Specifically for Caudate, to find DEGs accounting for antipsychotic treatment:
+message("DEG for Caudate stratifying by antipsychotics...")
+# Re-level the factor to set a specific reference if needed
+info_caudate$AP <- relevel(info_caudate$AP, ref = "SCZ_with_AP")
+# Create the design matrix from your data frame
+design <- model.matrix(~ 0 + AP + Age + Sex + mitoRate + RIN +
+                         PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
+                         snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
+                         snpPC8 + snpPC9 + snpPC10, data = info_caudate)
+
+colnames(design)
+# Rename the columns for clarity
+colnames(design) <- c("SCZ_AP", "CTRL", "SCZ_noAP", "Age", "Sex","mitoRate","RIN","PC1","PC2","PC3","PC4",
+                      "PC5","PC6","PC7","PC8","PC9","PC10","PC11","snpPC1","snpPC2","snpPC3","snpPC4","snpPC5",
+                      "snpPC6","snpPC7","snpPC8","snpPC9","snpPC10")
+
+
+message("Fitting linear model with limma...")
+
+# This part is for DLPFC, Hippo
+fitGene<-vector(mode = "list",length = 2)
+eBGene<-vector(mode = "list",length = 2)
+
+for(i in 1:2){
+  fitGene[[i]] <- lmFit(y[[i]], design = mod[[i]])
+  eBGene[[i]] <- eBayes(fitGene[[i]])
+}
+
+# And specifically for caudate:
+
+# Define a contrasts matrix for specific comparisons
+contrasts_matrix <- makeContrasts(
+  SCZ_AP_vs_CTRL = SCZ_AP - CTRL,
+  SCZ_noAP_vs_CTRL = SCZ_noAP - CTRL,
+  levels = design
+)
+
+# 1. For caudate, fit the linear model to each gene
+fit <- lmFit(y[[3]], design)
+# 2. Then, apply the specific contrasts
+fit2 <- contrasts.fit(fit, contrasts = contrasts_matrix)
+# 3. Compute empirical Bayes statistics
+fit2 <- eBayes(fit2)
+
+# Quality-check:
+message("Plotting mean-variance trend...")
+plotSA(fitGene[[i]], main = "Final Model: Mean-variance Trend (Region)") # Good for checking normalization
+
+message("Top table of differential gene expression results (first few rows):")
+
+# For DLPFC and Hippo:
+
+sigGene_dx <- topTable(eBGene[[i]], coef = 2, p.value = 1, number = nrow(fitGene[[i]]), sort = "none")
+print(head(sigGene_dx[, -c(1, 3, 6:10)])) # Print selected columns for brevity
+
+# For Caudate:
+
+# 4. Get the results for your contrasts
+# This will give you the top differentially expressed genes for the Level2 vs. Level1 contrast
+sigGene_AP<-topTable(fit2, coef = "SCZ_AP_vs_CTRL",p.value = 1, number = nrow(fit2), sort = "none")
+sigGene_noAP<-topTable(fit2, coef = "SCZ_noAP_vs_CTRL",p.value = 1, number = nrow(fit2), sort = "none")
+
+# To get the results for all contrasts at once, you can use `decideTests`
+results <- decideTests(fit2)
+summary(results)
+
+# Identify significantly differentially expressed genes (FDR <= 0.05)
+sigGene <- sigGene_dx[sigGene_dx$adj.P.Val <= 0.05, ]
+
+sigGene_AP <- sigGene_AP[sigGene_AP$adj.P.Val <= 0.05, ] # For Caudate
+Down<-sigGene_AP[sigGene_AP$logFC < 0, ]
+Up<-sigGene_AP[sigGene_AP$logFC > 0, ]
+
+sigGene_noAP <- sigGene_noAP[sigGene_noAP$adj.P.Val <= 0.05, ]
+Down_noAP<-sigGene_noAP[sigGene_noAP$logFC < 0, ]
+Up_noAP<-sigGene_noAP[sigGene_noAP$logFC > 0, ]
+
+message(paste("Number of significantly differentially expressed genes (adj.P.Val <= 0.05):", nrow(sigGene_AP)))
+
+# Plotting density of expression values (optional, useful for visualization)
+message("Plotting density of expression values for Caudate data...")
+nsamples <- ncol(y[[i]])
+col <- brewer.pal(min(nsamples, 12), "Paired") # Use min(nsamples, 12) for brewer.pal limit
+samplenames <- colnames(y[[i]])
+
+plot(density(y[[i]][, 1]), col = col[1], lwd = 2, ylim = c(0, 0.5), las = 2, main = "", xlab = "")
+title(main = "B. Filtered Data (Region)", xlab = "Log2 Transformed Expression")
+
+for (i in 2:nsamples) {
+  den <- density(y[[i]][, i])
+  lines(den$x, den$y, col = col[i], lwd = 2)
+}
+legend("topright", samplenames, text.col = col, bty = "n", cex = 0.8)
+
+# Summarize differential expression results (up/down regulated genes)
+message("Summary of differential expression results (up/down regulated genes):")
+print(summary(decideTests(fitGene[[2]]))) # or fit2 for Caudate
+
+# Store rownames of significant genes
+sigGene_rownames_AP_Up <- rownames(Up)
+sigGene_rownames_AP_Down <- rownames(Down)
+sigGene_rownames_noAP_Up <- rownames(Up_noAP)
+sigGene_rownames_noAP_Down <- rownames(Down_noAP)
+
+message("Rownames of significant genes stored in 'sigGene_rownames'.")
+
+sort(sigGene_rownames_AP_Up)
+sort(sigGene_rownames_AP_Down)
+sort(sigGene_rownames_noAP_Up)
+sort(sigGene_rownames_noAP_Down)
+
+collectGarbage() # Final garbage collection
+message("\nScript execution complete.")
+
+# Save the DGE results
+DEGs<-vector(mode="list",length=3);
+names(DEGs)<-c("DLPFC","Hippo","Caudate")
+DEGs[[i]]<-sigGene
+DEGs[[i]]$Symbol<-sigGene_rownames
+
+# Find regional consistency for DEGs
+intersect(intersect(DEGs$DLPFC$Symbol,DEGs$Hippo$Symbol),unique(c(sigGene_rownames_AP_Down,sigGene_rownames_AP_Up,sigGene_rownames_noAP_Down,sigGene_rownames_noAP_Up)))
+
+save(DEGs,mod,file="Differential_gene_expression_3regions_07112025.RData")
+
+# Check the overlap between DEG Caudate SCZ AP and DEG Caudate no AP
+
+ov_AP_noAP<-intersect(c(sigGene_rownames_AP_Down,sigGene_rownames_AP_Up),c(sigGene_rownames_noAP_Down,sigGene_rownames_noAP_Up))
+
+message("Overlap DEGs Caudate for contrast SCZ AP vs. CTRL - DEGs Caudate for contrast SCZ no AP vs. CTRL:")
+print(sort(ov_AP_noAP))
+
+# Check overlap between your caudate DEGs and Caudate paper DEGs:
+
+Caudate_paper.txt <- read.delim("~/data-symlink/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Caudate_paper.gz",stringsAsFactors=TRUE)
+DEGs_paper_AP<-subset(Caudate_paper.txt,Caudate_paper.txt$Type=="Gene" & Caudate_paper.txt$adj.P.Val<0.05 & Caudate_paper.txt$Analysis=="SZ (AP) vs CTL")
+DEGs_paper_AP<-as.character(DEGs_paper_AP$Symbol)
+DEGs_paper_AP<-unique(DEGs_paper_AP)
+
+DEGs_paper_noAP<-subset(Caudate_paper.txt,Caudate_paper.txt$Type=="Gene" & Caudate_paper.txt$adj.P.Val<0.05 & Caudate_paper.txt$Analysis=="SZ (no AP)vs CTL")
+DEGs_paper_noAP<-as.character(DEGs_paper_noAP$Symbol)
+DEGs_paper_noAP<-unique(DEGs_paper_noAP)
+
+# Results of DGE current study:
+current_DEGs_AP<-rownames(sigGene_AP)
+current_DEGs_noAP<-rownames(sigGene_noAP)
+
+ov_currentDEGs_DEGs_paper_AP<-intersect(current_DEGs_AP,DEGs_paper_AP)
+ov_currentDEGs_DEGs_paper_noAP<-intersect(current_DEGs_noAP,DEGs_paper_noAP)
+
+message("ov_currentDEGs_DEGs_paper:",length(ov_currentDEGs_DEGs_paper))
