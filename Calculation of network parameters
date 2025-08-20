@@ -1,0 +1,56 @@
+
+##### This is an essential part of the analysis #######
+##### 1. Calculating the network parameters of interst #######
+
+# Load the expression data and consensus tree & modules for the three regions:
+# Reference modules: CTRL modules
+
+load("/home/edata/.../.../Expression_data_for_rWGCNA_297samples_10202022.RData")
+load("/home/edata/.../.../Consensus_tree_modulesColors_expr_CTRL_SCZ_10312022.RData")
+
+load("/home/edata/.../.../Consensus_tree_modulesColors_CTRL_SCZ_12212022.RData")
+load("/home/edata/.../.../Expression_data_for_rWGCNA_250samples_12152022.RData")
+
+load("/home/edata/.../.../Expression_data_for_rWGCNA_349samples_12162022.RData")
+load("/home/edata/.../.../Consensus_tree_modulesColors_Caudate_CTRL_SCZ_12232022.RData")
+
+# Create adjacency matrices for CTRL and SCZ:
+
+collectGarbage()
+
+adj_CTRL<-adjacency(datExpr=datExpr_CTRL,type="signed",power=10, # 11 for Caudate, 14 for Hippo
+                    corFnc = "bicor")
+adj_SCZ<-adjacency(datExpr=datExpr_SCZ,type="signed",power=10,
+                   corFnc = "bicor")
+# save(adj_SCZ,file="adjacency_SCZ_03132024.RData")
+
+# Calculate intramodular connectivity using as reference CTRL modules for all six networks
+# This will give kIn and kTotal, but kTotal is not dependent on modules
+
+# Scaled
+intraMod_con_CTRL_scaled<-intramodularConnectivity(adj_CTRL,colors = unmergedColors_CTRL,scaleByMax = TRUE)
+intraMod_con_SCZ<-intramodularConnectivity(adj_SCZ,colors = dynamicColors_CTRL,scaleByMax = TRUE)
+
+# Unscaled:
+intraMod_con_CTRL_ns<-intramodularConnectivity(adj_CTRL,colors = dynamicColors_CTRL,scaleByMax = FALSE)
+intraMod_con_SCZ_ns<-intramodularConnectivity(adj_SCZ,colors = dynamicColors_CTRL,scaleByMax = FALSE)
+
+intraMod_con_refCTRL_modules<-cbind(intraMod_con_CTRL_ns1,intraMod_con_SCZ_ns1)
+Names<-c("kTotal_CTRL","KWithin_CTRL","kOut_CTRL","kDiff_CTRL","kTotal_SCZ","KWithin_SCZ","kOut_SCZ","kDiff_SCZ")
+names(intraMod_con_refCTRL_modules)<-Names
+# Of note, the adjustment of kIn for module size was done in Excel tables.
+
+# Calculate clustering coefficient
+# This is computationally demanding, it takes at least 12 hours.
+clCoeff_CTRL<-clusterCoef(adj_CTRL) 
+clCoeff_SCZ<-clusterCoef(adj_SCZ) 
+
+
+
+
+
+
+
+
+
+
