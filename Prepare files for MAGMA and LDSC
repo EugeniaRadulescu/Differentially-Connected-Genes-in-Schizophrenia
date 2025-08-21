@@ -1,1 +1,264 @@
 
+##### Using biomart to get hg19 and symbol gene ID for outliers and other genes of interest ########
+
+# Create the list of genes with C, kIn, C-kIn shared, DEGs (DLPFC, Hippo, Caudate); 
+# Convert these gene sets in hg19.
+
+library(biomaRt) 
+
+ensembl = useMart("ENSEMBL_MART_ENSEMBL", # VERSION 75, hg19
+                  dataset="hsapiens_gene_ensembl",
+                  host="feb2014.archive.ensembl.org")
+
+listAttributes(ensembl)
+
+sym = getBM(attributes = c("ensembl_gene_id","hgnc_symbol","gene_biotype"),
+            values="", mart=ensembl)
+
+# --- 2. Define Global Paths and Data ---
+
+# Base path for input data
+base_input_path <- "/home/edata/.../.../"
+
+# Load common gene sets for testing enrichment
+message("Loading common gene sets for enrichment testing...")
+# Assuming these RData files contain:
+#   - Out_clCoeff_spec
+#   - Out_kIn_modSize_spec
+#   - ov (from which Shared_by_clCoef_kIn is derived)
+
+load(file.path(base_input_path, "Final_set_outliers_for_enrichment_07032024.RData"))
+load(file.path(base_input_path, "Differential_gene_expression_3regions_07112025.RData"))
+SynGO<-read_excel(file.path(base_input_path,"SynGO_final_07112025.xlsx"))
+load("/home/edata/.../.../DEG_Caudate_based_onAP_08082025.RData")
+
+message("Creating final sets shared by all regions...")
+
+Shared_by_clCoef_kIn <- c(ov[[1]], ov[[2]])
+
+# DEGs_shared<-calculate.overlap(x=list(DEGs[[1]]$Symbol,DEGs[[2]]$Symbol,DEGs[[3]]$Symbol)) 
+# DEGs_shared_final<-DEGs_shared$a5 # Only 3 genes, no need to use
+
+# Recursive function to remove specified name from all levels of a list
+# Original function, adapted slightly for clarity.
+stripname <- function(x, name_to_strip) {
+  if (!is.list(x)) {
+    return(x)
+  } else {
+    if (length(name_index <- which(names(x) == name_to_strip))) {
+      x <- x[-name_index]
+    }
+    return(lapply(x, stripname, name_to_strip))
+  }
+}
+
+# Function to process Excel data into a named list of gene vectors
+process_excel_data <- function(excel_df, split_by_col, gene_col) {
+  dt <- setDT(excel_df)
+  # Split into list by the specified column
+  split_list <- split(dt, by = split_by_col)
+  
+  # Recursively remove the split-by column name from list elements
+  processed_list <- stripname(split_list, split_by_col)
+  
+  # Extract gene names as vectors and rename list elements
+  result_list <- vector(mode = "list", length = length(processed_list))
+  for (i in seq_along(processed_list)) {
+    result_list[[i]] <- as.vector(processed_list[[i]][[gene_col]])
+  }
+  names(result_list) <- names(processed_list)
+  return(result_list)
+}
+
+SynGO <- process_excel_data(SynGO, "Set", "Symbol")
+
+# Load the necessary library for data manipulation.
+
+library(dplyr)
+
+#' Process Gene Data
+#'
+#' This function takes a single-column data frame or vector of gene symbols and
+#' joins it with a symbol mapping data frame. It then extracts Ensembl gene
+#' IDs and a deduplicated list of HGNC symbols.
+#'
+#' @param initial_data A single-column data frame or vector containing HGNC symbols.
+#' @param symbol_map A data frame with at least two columns: 'hgnc_symbol' and
+#'   'ensembl_gene_id'. This data frame is used for the inner join.
+#'
+#' @return A list containing three elements:
+#'   - `joined_data`: The final data frame after the inner join.
+#'   - `ensembl_ids`: A vector of all Ensembl gene IDs from the joined data.
+#'   - `unique_hgnc_symbols`: A vector of unique HGNC symbols.
+#'
+#' @examples
+#' # --- Create example data to demonstrate the function ---
+#'
+#' # Mock data for the initial HGNC symbols
+#' mock_initial_data <- data.frame(
+#'   hgnc_symbol = c("TP53", "BRCA1", "TP53", "EGFR", "MYC")
+#' )
+#'
+#' # Mock data for the symbol mapping table
+#' mock_symbol_map <- data.frame(
+#'   hgnc_symbol = c("TP53", "BRCA1", "EGFR", "MYC", "PTEN"),
+#'   ensembl_gene_id = c("ENSG00000141510", "ENSG00000012048",
+#'                     "ENSG00000146648", "ENSG00000136997",
+#'                     "ENSG00000136998")
+#' )
+#'
+#' # Run the function with the example data
+
+#'
+process_gene_data <- function(initial_data, symbol_map) {
+  # 1. Convert initial_data to a data frame and rename the column
+  #    The as.data.frame() call handles vectors and existing data frames.
+  C <- as.data.frame(initial_data)
+  names(C) <- "hgnc_symbol"
+  
+  # 2. Perform an inner join with the symbol mapping data
+  C <- dplyr::inner_join(C, symbol_map, by = "hgnc_symbol")
+  
+  # 3. Extract the ensembl_gene_id column
+  C_ensembl <- C$ensembl_gene_id
+  
+  # 4. Extract the unique hgnc_symbols
+  #    Using dplyr::distinct() is a clean and efficient way to do this.
+  C_symbol <- C %>%
+    dplyr::distinct(hgnc_symbol) %>%
+    dplyr::pull(hgnc_symbol)
+  
+  # 5. Return the results in a list
+  return(list(
+    joined_data = C,
+    ensembl_ids = C_ensembl,
+    unique_hgnc_symbols = C_symbol
+  ))
+}
+
+results_SynGO_signaling <- process_gene_data(
+  initial_data = SynGO$SynGO_BP_synaptic_signaling,
+  symbol_map = sym)
+
+#' # View the results
+#' print(results$joined_data)
+#' print(results$ensembl_ids)
+print(results_kIn_spec$unique_hgnc_symbols)
+
+
+# Define the gene sets for MAGMA:
+gene_sets_for_MAGMA <- list(
+  "C" = results_C_spec$unique_hgnc_symbols,
+  "KIn" = results_kIn_spec$unique_hgnc_symbols,
+  "C-KIn shared" = results_C_kIn_shared$unique_hgnc_symbols, # Uncomment if you want to include this
+  "DEGs DLPFC" = results_DEG_DLPFC$unique_hgnc_symbols,
+  "DEGs Hippo" = results_DEG_Hippo$unique_hgnc_symbols,
+  "DEGs Caudate AP Up"= results_DEG_Caudate_AP_Up$unique_hgnc_symbols,
+  "DEGs Caudate AP Down"= results_DEG_Caudate_AP_Down$unique_hgnc_symbols,
+  "DEGs Caudate noAP"=results_DEG_Caudate_noAP$unique_hgnc_symbols,
+  "SynGO presynaptic"=results_SynGO_presynaptic$unique_hgnc_symbols,
+  "SynGO postsynaptic"=results_SynGO_postsynaptic$unique_hgnc_symbols,
+  "SynGO signaling"=results_SynGO_signaling$unique_hgnc_symbols
+  )
+
+message("Gene sets to test loaded. Counts:")
+print(sapply(gene_sets_for_MAGMA, length))
+
+save(gene_sets_for_MAGMA,file="gene_sets_for_MAGMA_08082025.RData")
+collectGarbage()
+
+DT<-as.data.frame(unlist(gene_sets_for_MAGMA))
+Group=c(rep(names(gene_sets_for_MAGMA)[1],length(gene_sets_for_MAGMA[[1]])),
+        rep(names(gene_sets_for_MAGMA)[2],length(gene_sets_for_MAGMA[[2]])),
+        rep(names(gene_sets_for_MAGMA)[3],length(gene_sets_for_MAGMA[[3]])),
+        rep(names(gene_sets_for_MAGMA)[4],length(gene_sets_for_MAGMA[[4]])),
+        rep(names(gene_sets_for_MAGMA)[5],length(gene_sets_for_MAGMA[[5]])),
+        rep(names(gene_sets_for_MAGMA)[6],length(gene_sets_for_MAGMA[[6]])),
+        rep(names(gene_sets_for_MAGMA)[7],length(gene_sets_for_MAGMA[[7]])),
+        rep(names(gene_sets_for_MAGMA)[8],length(gene_sets_for_MAGMA[[8]])),
+        rep(names(gene_sets_for_MAGMA)[9],length(gene_sets_for_MAGMA[[9]])),
+        rep(names(gene_sets_for_MAGMA)[10],length(gene_sets_for_MAGMA[[10]])),
+        rep(names(gene_sets_for_MAGMA)[11],length(gene_sets_for_MAGMA[[11]])))
+        
+
+DT<-cbind(DT,Group)
+names(DT)<-c("Symbol","Set")
+
+# Function to save results to an Excel workbook
+save_enrichment_results <- function(data, output_filename, sheet_name) {
+  message(paste("\nSaving results to Excel:", output_filename))
+  wb <- createWorkbook()
+  addWorksheet(wb, sheet_name)
+  writeData(wb, sheet_name, x = data)
+  saveWorkbook(wb, output_filename, overwrite = TRUE)
+  
+}
+
+save_enrichment_results(
+  DT,
+  output_filename="Gene_sets_to_convert_hg19_08042025.xlsx",
+  sheet_name="For_MAGMA"
+)
+
+save(DT,file="DT.RData")
+
+# Define the path to your RData file.
+# Make sure this file is in the same directory as this script, or provide the full path.
+
+rdata_file_path <- "/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/DT.RData"
+
+# Load the RData file. This will load the 'DT' data frame into your R session.
+tryCatch({
+  load(rdata_file_path)
+  message("Successfully loaded DT.RData")
+}, error = function(e) {
+  stop(paste("Error loading file:", e$message))
+})
+
+# Verify that the 'DT' data frame exists in the loaded environment
+if (!exists("DT") || !is.data.frame(DT)) {
+  stop("The loaded RData file does not contain a data frame named 'DT'.")
+}
+
+# 1. Split the data frame by the 'Set' column.
+# This creates a list where each element is a data frame corresponding to one unique 'Set' value.
+split_data <- split(DT, DT$Set)
+
+# 2. Create a new Excel workbook object.
+wb <- createWorkbook()
+
+# 3. Loop through the split data, transpose each data frame, and add it as a new sheet to the workbook.
+# The `lapply` function applies the same function to each element of the split_data list.
+# We will use t() to transpose each data frame.
+transposed_data_list <- lapply(split_data, function(df) {
+  # Transpose the data frame.
+  # The column names of the original data frame will become the row names of the transposed data.
+  transposed_df <- as.data.frame(t(df))
+  
+  # Remove the 'Set' row from the transposed data, as it's now the sheet name.
+  transposed_df <- transposed_df[rownames(transposed_df) != "Set", ]
+  
+  return(transposed_df)
+})
+
+# 4. Write each transposed data frame to a separate sheet in the workbook.
+for (sheet_name in names(transposed_data_list)) {
+  addWorksheet(wb, sheetName = sheet_name)
+  writeData(wb, sheet = sheet_name, x = transposed_data_list[[sheet_name]], rowNames = TRUE)
+}
+
+# 5. Save the workbook to an Excel file.
+# The file will be named "Processed_Data.xlsx".
+output_file_path <- "Processed_Data.xlsx"
+saveWorkbook(wb, output_file_path, overwrite = TRUE)
+
+message(paste0("Data successfully processed and saved to '", output_file_path, "'"))
+
+
+Processed_Data <- read_excel("Processed_Data.xlsx", sheet = "transposed", col_names = FALSE)
+
+outfile<- paste0("Gene_sets_MAGMA.sets") # This is the final file 
+
+write.table(Processed_Data,outfile,quote=F,row.names=F,col.names=F,sep="\t")
+
+
