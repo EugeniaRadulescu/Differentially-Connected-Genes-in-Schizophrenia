@@ -180,8 +180,140 @@ for(i in 1:p$nrow) {
 
 p
 
-######## Figure 3 ##########
-# Load the outlier sets and data tables for the three regions:
+###### For figure 3 paper final ###########
+
+library(tidyr)
+library(dplyr)
+library(broom)
+library(data.table)
+library(readxl)
+
+intramodular_conn_CTRL_and_SCZ <- read_excel("intramodular_conn_CTRL_and_SCZ.xlsx")
+intraMod_con_refCTRL_modules_12272022 <- read_excel("Hippocampus/intraMod_con_refCTRL_modules_12272022.xlsx")
+intraMod_con_refCTRL_modules_01092023 <- read_excel("Caudate/intraMod_con_refCTRL_modules_01092023.xlsx")
+
+data<-intramodular_conn_CTRL_and_SCZ # DLPFC
+data<-intraMod_con_refCTRL_modules_12272022 # Hippo
+data<-intraMod_con_refCTRL_modules_01092023 # Caudate
+
+
+library(data.table)
+
+data<-setDT(data)
+names(data)
+
+
+library(data.table)
+
+calculate_metrics <- function(data, variable_name, region_name) {
+  # Convert to data.table and prepare data
+  data <- setDT(data)
+  
+  # Select the correct columns for the given variable
+  ctrl_col <- paste0(variable_name, "_CTRL")
+  scz_col <- paste0(variable_name, "_SCZ")
+  
+  if (!all(c(ctrl_col, scz_col) %in% names(data))) {
+    stop("Input columns not found for the specified variable.")
+  }
+  
+  data[, means := get(ctrl_col)]
+  data[, diffs := get(ctrl_col) - get(scz_col)]
+  data[, absDiffs := abs(diffs)]
+  
+  # Calculate the breaks to define outliers
+  stats <- boxplot.stats(data$absDiffs)$stats
+  iqr <- stats[4] - stats[2]
+  outlier_threshold <- stats[4] + 1.5 * iqr
+  
+  # Add a 'is_outlier' column to classify outliers
+  data[, is_outlier := absDiffs > outlier_threshold]
+  
+  # Add the region and variable names to the data table for plotting
+  data[, region := region_name]
+  data[, variable := variable_name]
+  data[, breaks_value := outlier_threshold]
+  
+  return(data)
+}
+
+
+library(ggplot2)
+library(MASS)
+library(viridis)
+
+generate_density_plot <- function(data) {
+  # Create a density column for plotting
+  get_density <- function(x, y, ...) {
+    dens <- MASS::kde2d(x, y, ...)
+    ix <- findInterval(x, dens$x)
+    iy <- findInterval(y, dens$y)
+    ii <- cbind(ix, iy)
+    return(dens$z[ii])
+  }
+  
+  # Calculate density for all points
+  data[, density := get_density(data$means, data$absDiffs, n = 100)]
+  
+  # Plot the data
+  p <- ggplot(data) +
+    # Plot non-outliers first, colored by density
+    geom_point(data = data[is_outlier == FALSE], aes(x = means, y = absDiffs, color = density),
+               size = 2, shape = 21, alpha = 0.6) +
+    scale_color_viridis() +
+    # Plot outliers on top, in a static color
+    geom_point(data = data[is_outlier == TRUE], aes(x = means, y = absDiffs),
+               color = "grey40", size = 2, shape = 21, alpha = 0.6) +
+    scale_x_continuous(expand = expansion(mult = c(0.1, 0.1))) +
+    scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +
+    ylab(paste0("Absolute Difference of ", unique(data$variable), "\nCTRL vs. SCZ")) +
+    xlab(paste0(unique(data$variable), " CTRL")) +
+    geom_hline(yintercept = 0, color = "black") +
+    geom_hline(yintercept = unique(data$breaks_value), color = "black", linetype = "dashed") +
+    annotate("text",
+             x = max(data$means, na.rm = TRUE) * 1.05,
+             y = unique(data$breaks_value),
+             label = round(unique(data$breaks_value), digits = 4),
+             size = 6, vjust = -0.5) +
+    theme_bw(base_size = 16) +
+    theme(
+      axis.title = element_text(size = 18, face = "bold", color = "black"),
+      axis.text = element_text(size = 14),
+      plot.title = element_text(family = "", face = "bold", color = "black", size = 24),
+      legend.position = "none"
+    )
+  
+  return(p)
+}
+
+
+# Load your data
+library(readxl)
+intramodular_conn_CTRL_and_SCZ <- read_excel("intramodular_conn_CTRL_and_SCZ.xlsx")
+intraMod_con_refCTRL_modules_12272022 <- read_excel("Hippo/intraMod_con_refCTRL_modules_12272022.xlsx")
+intraMod_con_refCTRL_modules_01092023 <- read_excel("Caudate/intraMod_con_refCTRL_modules_01092023.xlsx")
+
+# Process the DLPFC data for kTotal
+dlpfc_kTotal_data <- calculate_metrics(
+  data = intramodular_conn_CTRL_and_SCZ,
+  variable_name = "kTotal",
+  region_name = "DLPFC"
+)
+
+# Generate the plot
+dlpfc_kTotal_plot <- generate_density_plot(dlpfc_kTotal_data)
+print(dlpfc_kTotal_plot)
+
+# Process the Hippo data for kIn
+hippo_kIn_data <- calculate_metrics(
+  data = intraMod_con_refCTRL_modules_12272022,
+  variable_name = "kIn",
+  region_name = "Hippo"
+)
+
+# Generate the plot
+hippo_kIn_plot <- generate_density_plot(hippo_kIn_data)
+print(hippo_kIn_plot)
 
 
 
