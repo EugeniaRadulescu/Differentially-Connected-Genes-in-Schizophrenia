@@ -1,0 +1,318 @@
+
+###### Test if the overlap between regions is significant and plots for suppl figure- directionality #########
+
+# This was a very difficult plot, take care of it!
+
+load("/home/edata/.../.../Outliers_abs_and_directional_dlpfc_07132025.RData")
+load("/home/edata/.../.../Outliers_abs_and_directional_hippo_07132025.RData")
+load("/home/edata/.../.../Outliers_abs_and_directional_caudate_07132025.RData")
+
+Out_kTotal_abs<-list("DLPFC"=Out_abs_and_directional_dlpfc$kTotal_abs_dlpfc,
+                     "Hippo"=Out_abs_and_directional_hippo$kTotal_abs_hippo,
+                     "Caudate"=Out_abs_and_directional_caudate$kTotal_abs_caudate)
+
+Out_kIn_abs<-list("DLPFC"=Out_abs_and_directional_dlpfc$kIn_abs_dlpfc,
+                  "Hippo"=Out_abs_and_directional_hippo$kIn_abs_hippo,
+                  "Caudate"=Out_abs_and_directional_caudate$kIn_abs_caudate)
+
+Out_C_abs<-list("DLPFC"=Out_abs_and_directional_dlpfc$C_abs_dlpfc,
+                "Hippo"=Out_abs_and_directional_hippo$C_abs_hippo,
+                "Caudate"=Out_abs_and_directional_caudate$C_abs_caudate)
+
+
+# Overlap between regions:
+
+# --- 1. Load Libraries ---
+library(SuperExactTest)
+library(readxl) # Assuming this is used for read_excel
+library(RColorBrewer) # For display.brewer.all and color palettes
+
+collectGarbage()
+
+# --- 2. Define Global Paths ---
+base_path <- "/home/edata/.../.../"
+
+# --- 3. Load Regions spreadsheets ---
+message("Loading DLPFC, Hippo and Caudate Excel files...")
+
+# It's good practice to use file.path for constructing paths
+dlpfc_excel_path <- file.path(base_path, "intramodular_connectivity_DLPFC.xlsx")
+caudate_excel_path <- file.path(base_path, "Caudate", "intraMod_con_refCTRL_modules_01092023.xlsx")
+hippo_excel_path <- file.path(base_path, "Hippocampus", "intraMod_con_refCTRL_modules_12272022.xlsx")
+
+intramodular_conn_CTRL_and_SCZ <- read_excel(dlpfc_excel_path)
+DLPFC_all <- intramodular_conn_CTRL_and_SCZ$Symbol
+
+intraMod_con_refCTRL_modules_01092023 <- read_excel(caudate_excel_path)
+Caudate_all <- intraMod_con_refCTRL_modules_01092023$Symbol
+
+intraMod_con_refCTRL_modules_12272023 <- read_excel(hippo_excel_path) # Corrected variable name consistency
+Hippo_all <- intraMod_con_refCTRL_modules_12272023$Symbol
+
+# Create a named list of all gene symbols for overlap calculation
+all_regions_gene_lists <- list(DLPFC = DLPFC_all, Hippo = Hippo_all, Caudate = Caudate_all)
+
+# Calculate initial overlap across all regions
+ov_All_regions <- calculate.overlap(all_regions_gene_lists)
+
+# Calculate total unique genes across all initial regions
+# Assuming 'total' represents the universe size for the supertest.
+# This calculation needs to be precise about what 'total' means.
+# If it's the union of all genes, then length(unique(unlist(all_regions_gene_lists))) is more appropriate.
+# Your original code sums lengths of all overlap combinations, which might not be the total universe.
+# Let's assume for now that 'total' is indeed the sum of lengths of all overlap categories as you defined it.
+total <- length(unique(unlist(all_regions_gene_lists))) # More concise way to sum lengths of list elements
+
+rm(intraMod_con_refCTRL_modules_01092023, intraMod_con_refCTRL_modules_12272023, intramodular_conn_CTRL_and_SCZ)
+
+# --- 4. Load absolute and by directionality and Outlier Sets ---
+
+message("Loading abs diff, pos diff and neg outlier sets...")
+
+# Define common part of file names for cleaner loading
+file_prefixes <- c("dlpfc", "hippo", "caudate")
+outlier_types <- c("kTotal_pos", "kTotal_neg", "kIn_pos", "kIn_neg", "C_pos", "C_neg")
+
+# Initialize lists to store outlier data
+Out_kTotal_pos <- list()
+Out_kTotal_neg <- list()
+Out_kIn_pos <- list()
+Out_kIn_neg <- list()
+Out_C_pos <- list()
+Out_C_neg <- list()
+
+
+for (prefix in file_prefixes) {
+  # Construct the file path using file.path
+  file_path <- file.path(base_path, paste0("Outliers_by_directionality_", prefix, "_07112025.RData"))
+  
+  if (file.exists(file_path)) {
+    load(file_path) # This loads variables like Out_directionality_dlpfc, etc.
+    # Dynamically assign based on the loaded object's name.
+    # This assumes the loaded object is named consistently e.g., Out_directionality_dlpfc.
+    loaded_obj_name <- paste0("Out_directionality_", prefix)
+    loaded_data <- get(loaded_obj_name) # Get the object by its name
+    
+    region_name <- switch(prefix,
+                          "dlpfc" = "DLPFC",
+                          "hippo" = "Hippo",
+                          "caudate" = "Caudate")
+    
+    Out_kTotal_pos[[region_name]] <- loaded_data[[paste0("kTotal_pos_", prefix)]]
+    Out_kTotal_neg[[region_name]] <- loaded_data[[paste0("kTotal_neg_", prefix)]]
+    Out_kIn_pos[[region_name]] <- loaded_data[[paste0("kIn_pos_", prefix)]] # kIn_pos_dlpfc was a typo in original (kTotal_pos_dlpfc)
+    Out_kIn_neg[[region_name]] <- loaded_data[[paste0("kIn_neg_", prefix)]]
+    Out_C_pos[[region_name]] <- loaded_data[[paste0("C_pos_", prefix)]]
+    Out_C_neg[[region_name]] <- loaded_data[[paste0("C_neg_", prefix)]]
+    
+    
+    # Clean up the loaded object from the environment to avoid conflicts
+    rm(list = loaded_obj_name)
+  } else {
+    warning(paste("File not found:", file_path))
+  }
+}
+
+# --- 5. Analysis and Visualization for Outlier Sets ---
+
+# Function to perform MSET and supertest, then plot
+perform_overlap_analysis <- function(gene_sets_list, universe_size, title_suffix) {
+  message(paste0("\n--- Analyzing: ", title_suffix, " ---"))
+  
+  # Calculate expected and observed overlap
+  length_gene_sets <- sapply(gene_sets_list, length)
+  # The expected overlap formula seems specific to your use case for dpsets/cpsets.
+  # For a general expected value of a three-way intersection of independent sets, it's (prod(lengths) / total^(k-1))
+  # where k is number of sets. Your num.expcted.overlap was total * prod(lengths/total) = prod(lengths) / total^(k-1)
+  # This seems correct for the probability calculation.
+  num_expected_overlap <- universe_size * do.call(prod, as.list(length_gene_sets / universe_size))
+  
+  # Calculate common genes (intersection)
+  common_genes <- Reduce(intersect, gene_sets_list) # More robust for any number of sets
+  num_observed_overlap <- length(common_genes)
+  
+  message(paste("Number of expected overlap:", round(num_expected_overlap, 2)))
+  message(paste("Number of observed overlap:", num_observed_overlap))
+  
+  if (num_expected_overlap > 0) { # Avoid division by zero
+    FE <- num_observed_overlap / num_expected_overlap
+    message(paste("Fold Enrichment (FE):", round(FE, 2)))
+  } else {
+    message("Fold Enrichment (FE): Not applicable (expected overlap is zero).")
+    FE <- NA
+  }
+  
+  
+  # MSET (Multi-Set Exact Test)
+  fit <- MSET(gene_sets_list, n = universe_size, lower.tail = FALSE)
+  message(paste("MSET P-value:", fit$p.value))
+  message(paste("MSET Fold Enrichment:", fit$FE))
+  message("MSET Intersects:")
+  print(fit$intersects)
+  
+  # Supertest for all possible intersections
+  res_supertest <- supertest(gene_sets_list, n = universe_size)
+  
+  # Plotting
+  mypalette <- colorRampPalette(brewer.pal(8, "Blues"))(250)
+  
+  plot(res_supertest, Layout = "landscape", degree = 1:3, sort.by = "p-value",
+       color.scale.pos = c(0.14, 0.8),
+       show.fold.enrichment = TRUE, show.elements = FALSE,
+       show.expected.overlap = TRUE,
+       log.scale = FALSE, # Set to TRUE if p-values are extremely small
+       color.on = "darkred",
+       expected.overlap.style = "hatchedBox",
+       color.expected.overlap = "seagreen",
+       margin = c(0.3, 8, 4, 4) + 0.3,
+       title = paste("Sets of genes with high deviance SCZ vs. CTRL\n", title_suffix),
+       heatmapColor = mypalette,
+       cex = 1.2,
+       cex.lab = 1.5,
+       gap.between.track = 0.1,
+       flip.vertical = FALSE,
+       cex.title = 2)
+  
+  summary(res_supertest)
+  message(paste0("Supertest P-value for largest intersection: ", res_supertest$P.value))
+  
+  return(list(MSET_result = fit, Supertest_result = res_supertest, common_genes = common_genes))
+}
+
+# --- Run analysis for kTotal_pos ---
+
+kTotal_pos_analysis_results <- perform_overlap_analysis(Out_kTotal_pos, total, "kTotal_positive")
+
+# You can access results like:
+# kTotal_pos_analysis_results$MSET_result
+# kTotal_pos_analysis_results$Supertest_result
+# kTotal_pos_analysis_results$common_genes
+
+# --- You would repeat the 'perform_overlap_analysis' call for other outlier types: ---
+
+kTotal_neg_analysis_results <- perform_overlap_analysis(Out_kTotal_neg, total, "kTotal_negative")
+kIn_pos_analysis_results <- perform_overlap_analysis(Out_kIn_pos, total, "kIn_positive")
+kIn_neg_analysis_results <- perform_overlap_analysis(Out_kIn_neg, total, "kIn_negative")
+C_pos_analysis_results <- perform_overlap_analysis(Out_C_pos, total, "C_positive")
+C_neg_analysis_results <- perform_overlap_analysis(Out_C_neg, total, "C_negative")
+
+kTotal_abs_results<-perform_overlap_analysis(Out_kTotal_abs, total, "kTotal_abs")
+kIn_abs_results<-perform_overlap_analysis(Out_kIn_abs, total, "kIn_abs")
+C_abs_results<-perform_overlap_analysis(Out_C_abs, total, "C_abs")
+
+save.image("/home/edata/.../.../Significance_of_abs_pos_neg_outliers_ov_for_3regs_07132025.RData")
+
+kTotal_abs_consist<-kTotal_abs_results$common_genes
+kTotal_pos_consist<-kTotal_pos_analysis_results$common_genes
+kTotal_neg_consist<-kTotal_neg_analysis_results$common_genes
+
+kIn_abs_consist<-kIn_abs_results$common_genes
+kIn_pos_consist<-kIn_pos_analysis_results$common_genes
+kIn_neg_consist<-kIn_neg_analysis_results$common_genes
+
+C_abs_consist<-C_abs_results$common_genes
+C_pos_consist<-C_pos_analysis_results$common_genes
+C_neg_consist<-C_neg_analysis_results$common_genes
+
+# Load necessary packages
+library(ggVennDiagram)
+library(ggplot2)
+library(dplyr)
+
+venn_list <- list(
+  'kIn abs' = kIn_abs_consist,
+  'kIn pos' = kIn_pos_consist,
+  'kIn neg' = kIn_neg_consist
+)
+
+# 2. Process the data and extract the specific data frames.
+venn_object <- ggVennDiagram::Venn(venn_list)
+plot_data <- ggVennDiagram::process_data(venn_object)
+
+region_edge_data <- ggVennDiagram::venn_regionedge(plot_data)
+set_edge_data <- ggVennDiagram::venn_setedge(plot_data)
+set_label_data <- ggVennDiagram::venn_setlabel(plot_data)
+region_label_data <- ggVennDiagram::venn_regionlabel(plot_data)
+
+# Add a new column to the region_edge_data to flag the regions to highlight.
+# The 'id' column is present in this data frame, so this will work.
+
+highlight_regions <- c("1/2")
+region_edge_data <- region_edge_data %>%
+  mutate(is_highlighted = id %in% highlight_regions)
+
+# 3. Construct the ggplot object for p1.
+p1 <- ggplot() +
+  # Layer 1: Fill the regions using geom_polygon and X/Y coordinates.
+  geom_polygon(
+    aes(x = X, y = Y, fill = is_highlighted, group = id), 
+    data = region_edge_data,
+    show.legend = FALSE
+  ) +
+  scale_fill_manual(values = c("TRUE" = "grey", "FALSE" = "white")) +
+  coord_equal() +
+  theme_void()
+
+p1
+
+# p2 builds on p1, adding the set boundaries
+p2 <- p1 +
+  geom_path(
+    aes(x = X, y = Y, color = id, group = id),
+    data = set_edge_data, 
+    show.legend = FALSE,
+    linewidth = 1
+  )
+
+p2
+
+p3 <- p2 +
+  # Layer 3: Add the set labels using geom_text and the X/Y coordinates.
+  geom_text(
+    aes(x = X, y = Y, label = name),
+    data = set_label_data,
+    size = 5
+  )
+
+p3
+
+# Assuming p3 from the previous step is correctly defined and in your environment.
+
+# Get the data for the region labels
+region_label_data <- ggVennDiagram::venn_regionlabel(plot_data)
+
+# Add the 'is_highlighted' column to this data frame
+highlight_regions <- c("1/2")
+region_label_data <- region_label_data %>%
+  mutate(is_highlighted = id %in% highlight_regions)
+
+p4 <- p3 +
+  geom_label(
+    aes(x = X, y = Y, label = count, color = is_highlighted),
+    data = region_label_data,
+    show.legend = FALSE,
+    size = 4,
+    fontface = "bold",
+    label.size = 0.2
+  ) +
+  scale_color_manual(values = c("TRUE" = "red", "FALSE" = "black"))
+
+# 5. Print the final plot
+p4
+
+p_kTotal<-p4
+p_kIn<-p4
+p_C<-p4
+
+# The following code assumes p2, p3, and p4 are already defined
+# based on our previous work.
+
+# Step 1: Add a margin to each plot
+p_kTotal_margined <- p_kTotal + theme(plot.margin = unit(c(1.2, 1.2, 1.2, 1.2), "cm"))
+p_kIn_margined <- p_kIn + theme(plot.margin = unit(c(1.2, 1.2, 1.2, 1.2), "cm"))
+p_C_margined <- p_C + theme(plot.margin = unit(c(1.2, 1.2, 1.2, 1.2), "cm"))
+
+# Step 2: Arrange the plots with the new margins
+gridExtra::grid.arrange(p_kTotal_margined, p_kIn_margined, p_C_margined, ncol = 3)
+
+
