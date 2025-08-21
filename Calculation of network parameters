@@ -38,14 +38,128 @@ intraMod_con_SCZ_ns<-intramodularConnectivity(adj_SCZ,colors = dynamicColors_CTR
 intraMod_con_refCTRL_modules<-cbind(intraMod_con_CTRL_ns1,intraMod_con_SCZ_ns1)
 Names<-c("kTotal_CTRL","KWithin_CTRL","kOut_CTRL","kDiff_CTRL","kTotal_SCZ","KWithin_SCZ","kOut_SCZ","kDiff_SCZ")
 names(intraMod_con_refCTRL_modules)<-Names
-# Of note, the adjustment of kIn for module size was done in Excel tables.
+# Of note, the adjustment of kIn by module size was done in Excel tables.
 
 # Calculate clustering coefficient
 # This is computationally demanding, it takes at least 12 hours.
 clCoeff_CTRL<-clusterCoef(adj_CTRL) 
 clCoeff_SCZ<-clusterCoef(adj_SCZ) 
 
+##### Calculate differences and absolute differences in network metrics #########
 
+library(GGally)
+library(tidyr)
+library(dplyr)
+library(broom)
+library(data.table)
+library(readxl)
+
+intramodular_conn_CTRL_and_SCZ <- read_excel("intramodular_conn_CTRL_and_SCZ.xlsx")
+intraMod_con_refCTRL_modules_12272022 <- read_excel(".../intraMod_con_refCTRL_modules_12272022.xlsx")
+intraMod_con_refCTRL_modules_01092023 <- read_excel(".../intraMod_con_refCTRL_modules_01092023.xlsx")
+
+
+data1<-as.data.frame(cbind(intramodular_conn_CTRL_and_SCZ$kTotal_CTRL,intramodular_conn_CTRL_and_SCZ$kTotal_SCZ,
+            intramodular_conn_CTRL_and_SCZ$kIn_CTRL,intramodular_conn_CTRL_and_SCZ$kIn_SCZ,
+            intramodular_conn_CTRL_and_SCZ$C_CTRL,intramodular_conn_CTRL_and_SCZ$C_SCZ)) # DLPFC
+data1$Symbol<-as.character(intramodular_conn_CTRL_and_SCZ$Symbol)
+
+names(data1)<-c("kTotal_CTRL","kTotal_SCZ","kIn_CTRL","kIn_SCZ","C_CTRL","C_SCZ","Symbol")
+
+# For Hippo
+data2<-as.data.frame(cbind(intraMod_con_refCTRL_modules_12272022$kTotal_CTRL,intraMod_con_refCTRL_modules_12272022$kTotal_SCZ,
+                           intraMod_con_refCTRL_modules_12272022$kIn_CTRL,intraMod_con_refCTRL_modules_12272022$kIn_SCZ,
+                           intraMod_con_refCTRL_modules_12272022$C_CTRL,intraMod_con_refCTRL_modules_12272022$C_SCZ)) # Hippo
+data2$Symbol<-as.character(intraMod_con_refCTRL_modules_12272022$Symbol)
+
+names(data2)<-c("kTotal_CTRL","kTotal_SCZ","kIn_CTRL","kIn_SCZ","C_CTRL","C_SCZ","Symbol")
+
+# For Caudate
+data3<-as.data.frame(cbind(intraMod_con_refCTRL_modules_01092023$kTotal_CTRL,
+                           intraMod_con_refCTRL_modules_01092023$kTotal_SCZ,intraMod_con_refCTRL_modules_01092023$kIn_CTRL,
+                          intraMod_con_refCTRL_modules_01092023$kIn_SCZ,intraMod_con_refCTRL_modules_01092023$C_CTRL,
+                          intraMod_con_refCTRL_modules_01092023$C_SCZ)) # Caudate
+data3$Symbol<-as.character(intraMod_con_refCTRL_modules_01092023$Symbol)
+
+names(data3)<-c("kTotal_CTRL","kTotal_SCZ","kIn_CTRL","kIn_SCZ","C_CTRL","C_SCZ","Symbol")
+
+
+library(data.table)
+
+#' @title A function to perform network metric calculations and rename columns
+#'
+#' @description This function takes a data.table and calculates means, differences,
+#' and absolute differences for three pairs of variables (Cl, kIn, K). It then
+#' selects the newly created columns and renames them by adding a specified suffix.
+#'
+#' @param data A data.table or data frame containing the variables to be used in the calculations.
+#' @param suffix The suffix to add to the new variable names (e.g., "_DLPFC").
+#'
+#' @return A data.table containing only the renamed calculated variables.
+#'
+#' @examples
+#' # Assume 'data' is your data.table with columns like C_CTRL, kIn_SCZ, etc.
+#' # For DLPFC
+#' # dlpfc_data <- process_metrics_and_rename(data, "_DLPFC")
+#'
+#' # For Hippo
+#' # hippo_data <- process_metrics_and_rename(data, "_Hippo")
+#'
+#' # For Caudate
+#' # caudate_data <- process_metrics_and_rename(data, "_Caudate")
+
+process_metrics_and_rename <- function(data, suffix) {
+  # Convert the input to a data.table to ensure compatibility
+  data <- setDT(data)
+  
+  # Perform calculations and create new variables
+  data[, means_Cl := (C_CTRL + C_SCZ) / 2]
+  data[, diffs_Cl := C_CTRL - C_SCZ]
+  data[, absDiffs_Cl := abs(diffs_Cl)]
+  
+  data[, means_kIn := (kIn_CTRL + kIn_SCZ) / 2]
+  data[, diffs_kIn := kIn_CTRL - kIn_SCZ]
+  data[, absDiffs_kIn := abs(diffs_kIn)]
+  
+  data[, means_K := (kTotal_CTRL + kTotal_SCZ) / 2]
+  data[, diffs_K := kTotal_CTRL - kTotal_SCZ]
+  data[, absDiffs_K := abs(diffs_K)]
+  
+  # Define the names of the new variables to select
+  new_vars <- c("means_Cl", "diffs_Cl", "absDiffs_Cl",
+                "means_kIn", "diffs_kIn", "absDiffs_kIn",
+                "means_K", "diffs_K", "absDiffs_K")
+  
+  # Check if the variables exist in the data.table
+  if (!all(new_vars %in% names(data))) {
+    stop("The new variables were not found in the data.table.")
+  }
+  
+  # Create a new data.table with only the selected variables
+  result_data <- data[, ..new_vars]
+  
+  # Rename the columns by adding the suffix
+  setnames(result_data, new_vars, paste0(new_vars, suffix))
+  
+  return(result_data)
+}
+
+data<-data1
+DLPFC_data<-process_metrics_and_rename(data, "_DLPFC")
+DLPFC_data$Symbol<-data$Symbol
+
+# Hippocampus:
+data<-data2
+Hippo_data<-process_metrics_and_rename(data, "_Hippo")
+Hippo_data$Symbol<-data$Symbol
+
+# Caudate:
+
+data<-data3
+Caudate_data<-process_metrics_and_rename(data, "_Caudate")
+Caudate_data$Symbol<-data$Symbol
+
+# Save the tables to be used for Fig.2
 
 
 
