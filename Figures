@@ -1,4 +1,3 @@
-Code used to create main and supplementary figures
 
 ##### Supplementary figure S1 ########
 
@@ -93,4 +92,98 @@ analyze_WGCNA_regions <- function(region_name) {
 # Apply the function for each brain region:
 # Example for "DLPFC"
 analyze_WGCNA_regions("DLPFC")
+
+###### Figure 2 ########
+
+# Load data tables that store differences and absolute differences for network metrics
+# Function to format data for the scatter-plot matrix
+
+library(data.table)
+
+#' @title A function to combine multiple data.tables into a single long-format data.table.
+#'
+#' @description This function takes a named list of data.tables, adds a new 'Region'
+#' column based on the list's names, standardizes the column names by removing the suffix,
+#' and then combines them into one long-format data.table.
+#'
+#' @param dt_list A named list of data.tables to be combined (e.g., list(DLPFC = DLPFC_data, ...)).
+#' @param suffixes A vector of suffixes to be removed from the column names (e.g., c("_DLPFC", "_Hippo")).
+#'
+#' @return A single long-format data.table with an added 'Region' column.
+#'
+#' @examples
+#' # Assume you have created your three data.tables: DLPFC_data, Hippo_data, Caudate_data
+#' # Combine them into a single data.table
+#'
+#' combined_dt <- combine_regions(
+#'   dt_list = list(DLPFC = DLPFC_data, Hippo = Hippo_data, Caudate = Caudate_data),
+#'   suffixes = c("_DLPFC", "_Hippo", "_Caudate")
+#' )
+
+combine_regions <- function(dt_list, suffixes) {
+  # Add a 'Region' column to each data.table
+  for (region_name in names(dt_list)) {
+    dt_list[[region_name]][, Region := region_name]
+  }
+  
+  # Get the common base column names
+  base_cols <- gsub(suffixes[1], "", names(dt_list[[1]]))
+  
+  # Standardize column names for all data.tables
+  for (i in seq_along(dt_list)) {
+    setnames(dt_list[[i]], old = names(dt_list[[i]])[1:length(base_cols)], new = base_cols)
+  }
+  
+  # Combine the data.tables into one long format
+  combined_dt <- rbindlist(dt_list)
+  
+  return(combined_dt)
+}
+
+
+# Create a named list of your data tables
+region_list <- list(DLPFC = DLPFC_data, Hippo = Hippo_data, Caudate = Caudate_data)
+
+# Specify the suffixes to remove
+region_suffixes <- c("_DLPFC", "_Hippo", "_Caudate")
+
+# Call the function to combine them
+final_combined_dt <- combine_regions(dt_list = region_list, suffixes = region_suffixes)
+
+# View the final data.table
+print(final_combined_dt)
+
+alldata_long<-final_combined_dt[,c(3,6,9,11)]
+
+library(GGally)
+
+GGally::ggpairs(alldata_long,upper = list(continuous = GGally::wrap("cor", method = "kendall")),
+        aes(color = Region, alpha = 0.6)) 
+
+p <- ggpairs(
+  alldata_long,
+  mapping = ggplot2::aes(color = Region, alpha = 0.4),
+  upper = list(continuous = GGally::wrap("cor", method = "kendall")),
+  lower = list(continuous = wrap("points", alpha = 0.4,"shape"=21)),
+  title = "Brain regional correlations between absolute differences in network metrics"
+)
+
+p
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+      scale_fill_manual(values=c("green4", "darkorange3", "deepskyblue3")) +
+      scale_color_manual(values=c("green4", "darkorange3", "deepskyblue3"))  
+  }
+}
+
+p
+
+
+
+
+
+
+
 
