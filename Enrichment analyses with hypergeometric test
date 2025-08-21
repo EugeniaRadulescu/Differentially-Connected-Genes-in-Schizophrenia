@@ -1,0 +1,434 @@
+
+##### Final enrichment; package= GeneOverlap ######
+
+# Preparation of Gene Sets for Enrichment Analysis 
+# Includes PGC3, SynGO, Druggable Genome, DEGs and TWAS genes
+
+# --- 1. Load Libraries ---
+library(readxl)        # For reading Excel files (though only used in commented section)
+library(data.table)    # For potential fast data frame operations (though not heavily used here)
+library(openxlsx)      # For saving data to Excel
+library(VennDiagram)   # For generating Venn diagrams (if needed for TWAS)
+library(GeneOverlap)
+
+# --- 2. Define Global Paths ---
+base_path <- "/home/edata/.../.../"
+
+# --- 3. Load Common Background Genes and Outlier Sets ---
+message("Loading common outlier and background gene sets...")
+
+# Assuming 'ov_All_regions' is loaded from this file and contains 'a5' (intersection of all regions).
+# Also assuming 'Out_clCoeff' is loaded for later TWAS intersection.
+load(file.path(base_path, "Final_set_outliers_for_enrichment_07032024.RData"))
+Background_genes <- ov_All_regions$a5
+message(paste("Total background genes loaded:", length(Background_genes)))
+
+# --- 4. Helper Function for Gene List Processing ---
+# This function simplifies loading, cleaning, and intersecting gene lists
+process_gene_list <- function(
+    data_frame,
+    gene_column_name,
+    background_genes_vector,
+    remove_na = TRUE,
+    remove_duplicates = TRUE,
+    as_character = TRUE
+) {
+  gene_list <- data_frame[[gene_column_name]]
+  
+  if (as_character) {
+    gene_list <- as.character(gene_list)
+  }
+  if (remove_na) {
+    gene_list <- gene_list[!is.na(gene_list)]
+  }
+  if (remove_duplicates) {
+    gene_list <- unique(gene_list)
+  }
+  # Intersect with background
+  gene_list_intersected <- intersect(gene_list, background_genes_vector)
+  return(gene_list_intersected)
+}
+
+# --- 5. Process PGC3 Prioritized Genes ---
+message("\nProcessing PGC3 Prioritized Genes...")
+pgc3_raw_data <- read.csv(file.path(base_path, "PGC3_Prioritized_genes.txt"), sep = "")
+PGC3_prioritized_genes <- process_gene_list(pgc3_raw_data, "PGC3_prioritized", Background_genes)
+message(paste("PGC3 prioritized genes after background intersection:", length(PGC3_prioritized_genes)))
+
+# --- 6. Process SynGO Ontologies ---
+message("\nProcessing SynGO Ontologies...")
+syngo_raw_data <- read.csv(file.path(base_path, "SynGO_by_ontologies_05022024.csv"))
+
+# Define column names for SynGO ontologies
+syngo_cols <- c(
+  "SynGO_BP_metabolism",
+  "SynGO_BP_axo_dendritic_transport",
+  "SynGO_BP_presynaptic_process",
+  "SynGO_BP_postsynaptic_process",
+  "SynGO_BP_synaptic_signaling"
+)
+
+# Process each SynGO list using the helper function
+SynGO_gene_lists <- lapply(syngo_cols, function(col_name) {
+  process_gene_list(syngo_raw_data, col_name, Background_genes)
+})
+names(SynGO_gene_lists) <- syngo_cols
+
+# Access individual SynGO lists for clarity (optional, can use SynGO_gene_lists directly)
+SynGO_BP_metabolism <- SynGO_gene_lists$SynGO_BP_metabolism
+SynGO_BP_axo_dendritic_transport <- SynGO_gene_lists$SynGO_BP_axo_dendritic_transport
+SynGO_BP_presynaptic_process <- SynGO_gene_lists$SynGO_BP_presynaptic_process
+SynGO_BP_postsynaptic_process <- SynGO_gene_lists$SynGO_BP_postsynaptic_process
+SynGO_BP_synaptic_signaling <- SynGO_gene_lists$SynGO_BP_synaptic_signaling
+
+message("SynGO gene lists processed. Counts after background intersection:")
+print(sapply(SynGO_gene_lists, length))
+
+# Prepare SynGO data for MAGMA (or other tools requiring a specific format)
+# This section constructs a data frame with gene symbols and their corresponding SynGO set.
+message("\nPreparing SynGO data for MAGMA format and saving to Excel...")
+SynGO_combined_df <- do.call(rbind, lapply(names(SynGO_gene_lists), function(set_name) {
+  data.frame(Symbol = SynGO_gene_lists[[set_name]], Set = set_name)
+}))
+colnames(SynGO_combined_df) <- c('Symbol', 'Set') # Ensure consistent column names
+
+# Save to Excel
+wb_syngo <- createWorkbook()
+addWorksheet(wb_syngo, "SynGO")
+writeData(wb_syngo, "SynGO", x = SynGO_combined_df)
+saveWorkbook(wb_syngo, file.path(base_path, "SynGO_final_07112025.xlsx"), overwrite = TRUE)
+message("SynGO_final_07112025.xlsx saved.")
+
+# --- 7. Process Druggable Genome Categories ---
+message("\nProcessing Druggable Genome Categories...")
+druggable_raw_data <- read.csv(file.path(base_path, "Druggable_by_levelsDev_05022024.csv"))
+
+# Define column names for druggable categories
+druggable_cols <- c(
+  "Druggable_genome_Tbio",
+  "Druggable_genome_Tchem",
+  "Druggable_genome_Tclin",
+  "Druggable_genome_Tdark"
+)
+
+# Process each druggable list using the helper function
+Druggable_gene_lists <- lapply(druggable_cols, function(col_name) {
+  process_gene_list(druggable_raw_data, col_name, Background_genes)
+})
+names(Druggable_gene_lists) <- druggable_cols
+
+message("Druggable genome gene lists processed. Counts after background intersection:")
+print(sapply(Druggable_gene_lists, length))
+
+# --- 8. Process TWAS Genes ---
+message("\nProcessing TWAS Genes...")
+
+# Load DLPFC and HIPPO TWAS results
+load(file.path(base_path, "TWAS_results.tar/tt_objects.Rdata")) # Assuming ttSig_bonf object
+# ttSig_bonf is expected to be a list containing DLPFC and HIPPO elements
+
+# Process DLPFC TWAS genes
+
+TWAS_DLPFC_genes_raw <- ttSig_bonf$DLPFC$genesymbol
+TWAS_DLPFC_genes <- TWAS_DLPFC_genes_raw[!duplicated(TWAS_DLPFC_genes_raw)]
+# If TWAS_DLPFC_genes_raw could contain problematic first elements, use a more robust filter:
+TWAS_DLPFC_genes <- TWAS_DLPFC_genes[!is.na(TWAS_DLPFC_genes) & TWAS_DLPFC_genes != ""]
+TWAS_DLPFC_genes <- sort(TWAS_DLPFC_genes)
+message(paste("DLPFC TWAS genes (Bonferroni < 0.05):", length(TWAS_DLPFC_genes)))
+
+# Process HIPPO TWAS genes
+TWAS_Hippo_genes_raw <- ttSig_bonf$HIPPO$genesymbol
+TWAS_Hippo_genes <- TWAS_Hippo_genes_raw[!duplicated(TWAS_Hippo_genes_raw)]
+TWAS_Hippo_genes <- TWAS_Hippo_genes[!is.na(TWAS_Hippo_genes) & TWAS_Hippo_genes != ""]
+TWAS_Hippo_genes <- sort(TWAS_Hippo_genes)
+message(paste("HIPPO TWAS genes (Bonferroni < 0.05):", length(TWAS_Hippo_genes)))
+
+# Process Caudate TWAS genes
+twas_caudate_raw_data <- read.delim(file.path(base_path, "BrainSeq_Phase3_Caudate_TWAS_associations_allFeatures.txt"))
+TWAS_Caudate_bonf_filtered <- subset(twas_caudate_raw_data, Bonferroni < 0.05)
+TWAS_Caudate_genes_raw <- TWAS_Caudate_bonf_filtered$ID
+TWAS_Caudate_genes <- TWAS_Caudate_genes_raw[!duplicated(TWAS_Caudate_genes_raw)]
+TWAS_Caudate_genes <- TWAS_Caudate_genes[!is.na(TWAS_Caudate_genes) & TWAS_Caudate_genes != ""]
+TWAS_Caudate_genes <- sort(TWAS_Caudate_genes)
+message(paste("Caudate TWAS genes (Bonferroni < 0.05):", length(TWAS_Caudate_genes)))
+
+# Print TWAS Caudate genes (for verification, as in original)
+# print(TWAS_Caudate_genes) # Uncomment if you want to see the list
+
+# --- 9. Identify Common TWAS Genes Across All 3 Regions ---
+message("\nIdentifying common TWAS genes across DLPFC, Hippocampus, and Caudate...")
+twas_venn_list <- list(
+  "TWAS_DLPFC_genes" = TWAS_DLPFC_genes,
+  "TWAS_Hippo_genes" = TWAS_Hippo_genes,
+  "TWAS_Caudate_genes" = TWAS_Caudate_genes
+)
+
+# You can optionally draw the Venn diagram here if desired
+venn_twas <- venn.diagram(twas_venn_list, filename = NULL,
+                          fill = c("skyblue", "lightpink", "lightgreen"), alpha = 0.5, main = "Common TWAS Genes")
+plot.new()
+grid.draw(venn_twas)
+
+overlap_twas <- calculate.overlap(twas_venn_list)
+TWAS_common_genes <- overlap_twas$a5 # 'a5' is the intersection of all three sets
+message(paste("Number of common TWAS genes across 3 regions:", length(TWAS_common_genes)))
+
+# Check intersection with 'Out_clCoeff' (from loaded 'Final_set_outliers_for_enrichment_07032024.RData')
+# Assuming 'Out_clCoeff' is a gene symbol list.
+if (exists("Out_clCoeff")) {
+  intersect_outlier_twas_caudate <- intersect(Out_clCoeff, TWAS_Caudate_genes)
+  message(paste("Intersection of Out_clCoeff and TWAS_Caudate_genes:", length(intersect_outlier_twas_caudate)))
+  intersect_outlier_twas_common <- intersect(Out_clCoeff, TWAS_common_genes)
+  message(paste("Intersection of Out_clCoeff and common TWAS genes:", length(intersect_outlier_twas_common)))
+} else {
+  warning("Out_clCoeff not found. Skipping intersection with TWAS genes.")
+}
+
+# Final intersection of common TWAS genes with the overall background
+TWAS_common_genes_final <- intersect(TWAS_common_genes, Background_genes)
+message(paste("Common TWAS genes after intersecting with overall Background:", length(TWAS_common_genes_final)))
+
+# --- 10. Save TWAS Genes ---
+
+# Renaming for clarity if they are the full data frames.
+TWAS_DLPFC_df <- ttSig_bonf$DLPFC # Assuming this is the full data frame for DLPFC TWAS
+TWAS_Hippo_df <- ttSig_bonf$HIPPO # Assuming this is the full data frame for HIPPO TWAS
+TWAS_Caudate_df <- TWAS_Caudate_bonf_filtered # This is the full filtered data for Caudate
+
+save(
+  TWAS_Caudate_df, TWAS_DLPFC_df, TWAS_Hippo_df,
+  TWAS_common_genes_final, # Save the final, background-intersected common list
+  file = file.path(base_path, "TWAS_genes_DLPFC_HIPPO_Caudate.RData")
+)
+message("TWAS_genes_DLPFC_HIPPO_Caudate.RData saved.")
+
+# --- 11. Load Additional Gene Sets (if needed) ---
+
+load("/home/edata/.../.../Differential_gene_expression_3regions_07112025.RData")
+load("/home/edata/.../.../DEG_Caudate_based_onAP_08082025.RData")
+
+message("\nScript execution complete. All gene sets prepared.")
+
+#### Calculate the enrichment ######
+
+# --- 1. Load Libraries ---
+library(readxl)        # For reading Excel files
+library(data.table)    # For setDT (fast data frame operations)
+library(GeneOverlap)   # For gene set enrichment analysis
+library(RColorBrewer)  # For color palettes in heatmaps
+library(circlize)      # Dependency for ComplexHeatmap (colorRamp2)
+library(ComplexHeatmap) # For generating professional heatmaps
+library(tibble)        # For rownames_to_column
+library(openxlsx)      # For saving data to Excel
+
+# --- 2. Define Global Paths and Data ---
+
+# Base path for input data
+base_input_path <- "/home/edata/.../.../"
+
+# Load common gene sets for testing enrichment
+message("Loading common gene sets for enrichment testing...")
+# Assuming these RData files contain:
+#   - Out_clCoeff_spec
+#   - Out_kIn_modSize_spec
+#   - ov (from which Shared_by_clCoef_kIn is derived)
+
+load(file.path(base_input_path, "Final_set_outliers_for_enrichment_07032024.RData"))
+load(file.path(base_input_path, "Differential_gene_expression_3regions_07112025.RData"))
+load(file.path(base_input_path, "Outliers_by_directionality_dlpfc_07112025.RData"))
+load(file.path(base_input_path, "DEG_Caudate_based_onAP_08082025.RData"))
+
+message("Creating final sets shared by all regions...")
+
+Shared_by_clCoef_kIn <- c(ov[[1]], ov[[2]])
+
+DEGs_shared<-calculate.overlap(x=list(DEGs[[1]]$Symbol,DEGs[[2]]$Symbol,DEGs[[3]]$Symbol)) 
+DEGs_shared_final<-DEGs_shared$a5
+
+
+# Define the gene sets to be tested for enrichment (common across analyses)
+gene_sets_to_test <- list(
+  "C" = Out_clCoeff_spec,
+  "KIn" = Out_kIn_modSize_spec,
+  "C-KIn_shared" = Shared_by_clCoef_kIn, # Uncomment if you want to include this
+  "DEGs DLPFC" = DEGs[[1]]$Symbol,
+  "DEGs Hippo" = DEGs[[2]]$Symbol,
+  "DEGs Caudate AP down" = sigGene_rownames_AP_Down,
+  "DEGs Caudate AP up" = sigGene_rownames_AP_Up,
+  "DEGs Caudate noAP down" = sigGene_rownames_noAP_Down,
+  "DEGs Caudate noAP up" = sigGene_rownames_noAP_Up)
+
+
+# gene_sets_to_test<-c(gene_sets_to_test,Out_directionality_dlpfc) # Attn these are just DLPFC!
+
+message("Gene sets to test loaded. Counts:")
+print(sapply(gene_sets_to_test, length))
+
+toTest<-list("PGC3 prioritized"=PGC3_prioritized_genes,"TWAS"=TWAS_common_genes,"SynGO metabolism"=SynGO_BP_metabolism,"SynGO presynaptic"=SynGO_BP_presynaptic_process,
+             "SynGO postsynaptic"=SynGO_BP_postsynaptic_process,"SynGO synaptic signaling"=SynGO_BP_synaptic_signaling,
+             "Druggable genome Tbio"=Druggable_gene_lists$Druggable_genome_Tbio,"Druggable genome Tchem"=Druggable_gene_lists$Druggable_genome_Tchem,
+             "Druggable genome Tclin"=Druggable_gene_lists$Druggable_genome_Tclin,"Druggable genome Tdark"=Druggable_gene_lists$Druggable_genome_Tdark,
+             "TWAS common genes"=TWAS_common_genes)
+
+message("Gene sets to be tested loaded. Counts:")
+print(sapply(toTest, length))
+collectGarbage()
+
+# --- 3. Helper Functions ---
+
+# Recursive function to remove specified name from all levels of a list
+# Original function, adapted slightly for clarity.
+stripname <- function(x, name_to_strip) {
+  if (!is.list(x)) {
+    return(x)
+  } else {
+    if (length(name_index <- which(names(x) == name_to_strip))) {
+      x <- x[-name_index]
+    }
+    return(lapply(x, stripname, name_to_strip))
+  }
+}
+
+# Function to process Excel data into a named list of gene vectors
+process_excel_data <- function(excel_df, split_by_col, gene_col) {
+  dt <- setDT(excel_df)
+  # Split into list by the specified column
+  split_list <- split(dt, by = split_by_col)
+  
+  # Recursively remove the split-by column name from list elements
+  processed_list <- stripname(split_list, split_by_col)
+  
+  # Extract gene names as vectors and rename list elements
+  result_list <- vector(mode = "list", length = length(processed_list))
+  for (i in seq_along(processed_list)) {
+    result_list[[i]] <- as.vector(processed_list[[i]][[gene_col]])
+  }
+  names(result_list) <- names(processed_list)
+  return(result_list)
+}
+
+# Function to perform GeneOverlap analysis and generate results
+perform_enrichment_analysis <- function(
+    tested_gene_sets,
+    to_test_gene_sets,
+    background_genes,
+    title_suffix = ""
+) {
+  message(paste0("\n--- Performing Enrichment Analysis: ", title_suffix, " ---"))
+  
+  total_background_genes <- length(background_genes)
+  message(paste("Total background genes:", total_background_genes))
+  message("Counts for tested gene sets:")
+  print(sapply(tested_gene_sets, length))
+  message("Counts for gene sets to test against:")
+  print(sapply(to_test_gene_sets, length))
+  
+  # Create GeneOverlap object
+  gom_obj <- newGOM(tested_gene_sets, to_test_gene_sets, total_background_genes)
+  
+  # Get p-value matrix and adjust
+  pval_matrix <- getMatrix(gom_obj, name = "pval")
+  adj_pval_matrix <- t(pval_matrix) # Transpose for p.adjust calculation
+  adj_pval_matrix[] <- p.adjust(adj_pval_matrix, method = "BH") # Apply BH adjustment
+  adj_pval_matrix <- t(adj_pval_matrix) # Transpose back to original orientation
+  
+  # Heatmap visualization
+  mypalette <- colorRamp2(c(0, 0.05, 0.1, 1), c("red", "darkorange", "grey90", "white"), space = "LAB", reverse = TRUE)
+  
+  message("Generating heatmap...")
+  print(
+    Heatmap(adj_pval_matrix,
+            name = "Adjusted p-value",
+            cluster_rows = FALSE,
+            show_row_dend = FALSE,
+            cluster_columns = FALSE,
+            column_title = paste0("Enrichment of differentially connected and differentially expressed genes in ", title_suffix, "\ngene sets of interest"),
+            column_title_gp = gpar(col = "black", fontsize = 18, fontface = "bold"),
+            column_names_rot = 60,
+            column_names_gp = gpar(fontsize = 12, fontface = "bold", col = "black"),
+            row_names_gp = gpar(fontsize = 12, fontface = "bold", col = "black"),
+            col = mypalette,
+            cell_fun = function(j, i, x, y, width, height, fill) {
+              val <- adj_pval_matrix[i, j]
+              text_color <- if (val < 0.0499) "white" else if (val < 0.1) "blue" else "black"
+              grid.text(sprintf("%.3f", val), x, y, gp = gpar(fontsize = 10, col = text_color, fontface = "bold"))
+            }
+    )
+  )
+  
+  # Compile all tables
+  pvalTable <- as.data.frame(getMatrix(gom_obj, name = "pval"))
+  oddsRatioTable <- as.data.frame(getMatrix(gom_obj, name = "odds.ratio"))
+  intersectionTable <- as.data.frame(getMatrix(gom_obj, name = "intersection"))
+  Jaccard <- as.data.frame(getMatrix(gom_obj, name = "Jaccard"))
+  
+  # Rename columns for clarity in adjusted p-value table
+  colnames(adj_pval_matrix) <- colnames(pval_matrix)
+  rownames(adj_pval_matrix) <- rownames(pval_matrix)
+  adj_pvalTable <- as.data.frame(adj_pval_matrix)
+  
+  
+  # Add row names as a column
+  pvalTable <- rownames_to_column(pvalTable, var = "Gene_sets")
+  adj_pvalTable <- rownames_to_column(adj_pvalTable, var = "Gene_sets")
+  oddsRatioTable <- rownames_to_column(oddsRatioTable, var = "Gene_sets")
+  intersectionTable <- rownames_to_column(intersectionTable, var = "Gene_sets")
+  Jaccard <- rownames_to_column(Jaccard, var = "Gene_sets")
+  
+  # Combine into a single list
+  result_list <- list(
+    gom_obj = gom_obj,
+    background_genes = background_genes,
+    p_value_table = pvalTable,
+    adjusted_p_value_table = adj_pvalTable,
+    odds_ratio_table = oddsRatioTable,
+    intersection_table = intersectionTable,
+    jaccard_index_table = Jaccard
+  )
+  return(result_list)
+}
+
+# Function to save results to an Excel workbook
+save_enrichment_results <- function(results_list, output_filename, sheet_name) {
+  message(paste("\nSaving results to Excel:", output_filename))
+  wb <- createWorkbook()
+  addWorksheet(wb, sheet_name)
+  
+  # Combine all tables into a single data frame for the supplement
+  # Using do.call(rbind, ...) to combine data frames with consistent column names
+  # Need to ensure all tables have same columns after rownames_to_column
+  suppl_table <- rbind(
+    results_list$p_value_table,
+    results_list$adjusted_p_value_table,
+    results_list$odds_ratio_table,
+    results_list$intersection_table,
+    results_list$jaccard_index_table
+  )
+  writeData(wb, sheet_name, x = suppl_table)
+  saveWorkbook(wb, output_filename, overwrite = TRUE)
+  message(paste("Results saved to:", output_filename))
+}
+
+# Perform the enrichment
+
+message("\n--- Starting Analysis for final enrichment ---")
+
+
+# Perform enrichment analysis
+results_enrichment <- perform_enrichment_analysis(
+  tested_gene_sets = toTest,
+  to_test_gene_sets = gene_sets_to_test,
+  background_genes = Background_genes,
+  title_suffix = ""
+)
+
+# Save results
+save_enrichment_results(
+  results_enrichment,
+  "SupplTable_for_enrichments_instead_of_heatmap_5_08122025.xlsx",
+  "Enrichments_final"
+)
+
+save(results_enrichment,file="Enrichments_final_08122025.RData")
+
+collectGarbage()
