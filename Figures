@@ -180,6 +180,10 @@ for(i in 1:p$nrow) {
 
 p
 
+######## Figure 3 ##########
+# Load the outlier sets and data tables for the three regions:
+
+
 
 
 
