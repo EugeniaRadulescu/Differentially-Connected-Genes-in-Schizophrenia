@@ -1,1 +1,176 @@
 
+######## Gene ontology analysis- GO:BP for DCG and DEG #########
+
+#### Cluster Profiler for DCG and DEGs caudate 08142025 #####
+
+load("/home/edata/.../Differential_gene_expression_3regions_07112025.RData")
+load("/home/edata/.../Final_set_outliers_for_enrichment_07032024.RData")
+
+collectGarbage()
+
+mydf<-as.data.frame(c(Out_clCoeff_spec,Out_kIn_modSize_spec,intersect(Out_clCoeff,Out_kIn_modSize),
+                    DEGs$DLPFC$Symbol,DEGs$Hippo$Symbol,
+                    DEGs$Caudate$Symbol))
+
+group_names <- c("C", "kIn", "C-kIn shared","DEG DLPFC","DEG Hippo","DEG-Caudate")
+group_sizes <- c(length(Out_clCoeff_spec), length(Out_kIn_modSize_spec), length(intersect(Out_clCoeff,Out_kIn_modSize)),
+                 length(DEGs$DLPFC$Symbol),length(DEGs$Hippo$Symbol),
+                 length(DEGs$Caudate$Symbol))
+
+group_names
+group_sizes
+
+Group <- rep(group_names, group_sizes)
+
+# Check the result
+print(table(Group))
+
+mydf$Group<-Group
+names(mydf)<-c("Symbol","Group")
+
+# For figure 4:
+
+mydf1<-as.data.frame(c(Out_clCoeff_spec,Out_kIn_modSize_spec,intersect(Out_clCoeff,Out_kIn_modSize)))
+                      
+group_names1 <- c("C", "kIn", "C-kIn shared")
+group_sizes1 <- c(length(Out_clCoeff_spec), length(Out_kIn_modSize_spec), length(intersect(Out_clCoeff,Out_kIn_modSize)))
+                 
+Group <- rep(group_names1, group_sizes1)
+group_names1
+group_sizes1
+
+mydf1$Group<-Group
+names(mydf1)<-c("Symbol","Group")
+
+Background<-ov_All_regions$a5
+
+library(clusterProfiler)
+
+formula_res <- compareCluster(Symbol~Group, data=mydf, fun="enrichGO",OrgDb = org.Hs.eg.db,
+                              keyType = "SYMBOL",ont = "BP",
+                              pvalueCutoff = 0.05,
+                              minGSSize    = 10,
+                              maxGSSize    = 500,
+                              pAdjustMethod = "bonferroni",
+                              universe=Background,
+                              qvalueCutoff = 0.05)
+
+# For cnetplot, use only C and kIn, so make sure you un-comment variables that you do not need
+
+formula_res1 <- compareCluster(Symbol~Group, data=mydf1, fun="enrichGO",OrgDb = org.Hs.eg.db,
+                               keyType = "SYMBOL",ont = "BP",
+                               minGSSize    = 10,
+                               maxGSSize    = 500,
+                               pvalueCutoff = 0.05,
+                               pAdjustMethod = "bonferroni",
+                               universe=Background,
+                               qvalueCutoff = 0.05)
+
+
+
+formula_test<-formula_res
+
+# For cnetplot:
+
+formula_test1<-formula_res1
+
+formula_final<-clusterProfiler::simplify(formula_test,cutoff = 0.7,
+                                         by = "p.adjust",
+                                         select_fun = min,
+                                         measure = "Wang",
+                                         semData = NULL)
+
+# For cnetplot:
+library(GOSemSim)
+
+formula_final1<-clusterProfiler::simplify(formula_test1,cutoff = 0.6,
+                                          by = "p.adjust",
+                                          select_fun = min,
+                                          measure = "Wang",
+                                          semData = NULL)
+formula_final1<-clusterProfiler::filter(formula_final1,Count>=10)
+
+
+head(formula_final)
+head(formula_final1)
+
+# Dotplot
+pp <- enrichplot::dotplot(formula_final, x="Parameters",showCategory = 5,label_format = 120) + facet_grid(. ~ Group) +
+  aes(x=as.factor(Group)) + xlab("Parameters") +
+  scale_fill_gradient(low="red",high="grey80",
+                       guide=guide_colorbar(reverse=TRUE, order=1)) +
+  guides(size = guide_legend(override.aes=list(shape=1))) +
+  theme(panel.grid.major.y = element_line(linetype='dotted', color='#808080'),
+        panel.grid.major.x = element_blank())
+
+
+pp + theme(axis.text.x = element_text(colour="black",face="bold",size=10,angle = 60,vjust = 1, hjust=1),
+           axis.text.y = element_text(colour="black",face="bold",size=10),
+           strip.text = element_text(size = 11,face="bold",colour = "darkred"))
+
+pp
+
+# Cnetplot
+colors_cnetplot<-c("purple","grey80","pink") # For cnetplot use C, kIn and C-kIn shared
+
+p<-enrichplot::cnetplot(formula_final1,showCategory=5,font.size=10,
+                        node_label="all",categorySize="GeneRatio",cex_label_category = 1.5,
+                        cex_label_gene = 1.2,colorEdge=TRUE) +
+  scale_fill_manual(values = colors_cnetplot)
+
+p
+p$data
+
+lapply(p$layers, function(x) class(x$geom))
+
+## delete current label layer and replace with geom_text_repel layer
+
+p2 <- gginnards::delete_layers(p, "GeomTextRepel")
+
+p2$data$name
+# label<-c(p2$data$name[1:8],'',p2$data$name[10:11],'',p2$data$name[13:120],rep('',39))
+label=p2$data$name
+
+library(ggrepel)
+
+cols<-c(rep("darkred",12),rep("black",91))
+size<-c(rep(2.5,12),rep(2,91))
+
+p3 <- p2 + ggrepel::geom_label_repel(aes(x = p2$data$x, y = p2$data$y,
+                                        label = label),
+                                    colour=cols,size=size,
+                                    fontface="bold",
+                                    hjust = 0.5,
+                                    force = 2,
+                                    max.overlaps = 20,
+                                    force_pull = 0,
+                                    box.padding = 0.5,
+                                    min.segment.length = 1,
+                                    position = position_nudge_repel(x = 0.3, y = 0.3)) 
+
+p4 <- p2 + ggrepel::geom_text_repel(aes(x = p2$data$x, y = p2$data$y,
+                                         label = label),
+                                     colour=cols,size=size,
+                                     fontface="bold",
+                                     hjust = 0.5,
+                                     force = 1,
+                                     max.overlaps = 20,
+                                     force_pull = 0,
+                                     box.padding = 0.5,
+                                     min.segment.length = 1,
+                                     position = position_nudge_repel(x = 0.3, y = 0.3)) 
+
+# hjust<-c(rep(0,2),rep(1,2),rep(0.5,63))
+
+p3 
+p4
+options(ggrepel.max.overlaps = Inf)
+
+library(openxlsx)
+
+wb <- createWorkbook()
+addWorksheet(wb, "Outliers_common_and_spec")
+writeData(wb, "Outliers_common_and_spec", x = mydf)
+saveWorkbook(wb, "Outliers_common_and_spec_final_07262024.xlsx", overwrite = TRUE)
+
+
