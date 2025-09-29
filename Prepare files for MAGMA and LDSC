@@ -217,6 +217,37 @@ Processed_Data <- read_excel("Processed_Data.xlsx", sheet = "transposed", col_na
 
 outfile<- paste0("Gene_sets_MAGMA.sets") # This is the final file 
 
-write.table(Processed_Data,outfile,quote=F,row.names=F,col.names=F,sep="\t")
+#### Create bed files ########
+
+##### Bed file for LDSC outliers for perp #######
+
+wind <- 100000
+
+gene.anno.file <- "gene_meta_hg19_2.txt"
+gene.meta <- read.table(gene.anno.file,sep="\t",header=T)
+
+# If you are in MAGMA directory, load the file from LDSC directory, then:
+
+gene.meta<-gene_meta_hg19_2
+
+dat <- gene.meta[gene.meta$seqnames != "chrX",]
+
+load("~/.../.../gene_sets_for_MAGMA_08082025.RData")
+
+genes<-gene_sets_for_MAGMA$Your_set
+genes<-as.data.frame(genes)
+genes <- genes[is.element(genes[,1],dat[,1]),1]
+
+# bedfiles
+
+dat$start2 <- as.character(ifelse(dat[,3] - wind > 0, dat[,3] - wind, 0))
+dat$end2 <- as.character(dat[,4] + wind)
+
+outfile<- paste0("Your_set.bed")
+idx <- is.element(dat[,1],genes)
+res <- dat[idx,c(2,6,7)]
+write.table(res,outfile,quote=F,row.names=F,col.names=F,sep="\t")
+
+
 
 
