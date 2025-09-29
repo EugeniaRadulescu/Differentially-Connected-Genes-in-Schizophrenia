@@ -1,1 +1,100 @@
+### MAGMA analysis #####
+
+# This analysis is based on Linux shell commands.
+# Annotate genes with hg37/hg19:
+
+magma --annotate window=1,0.5 --snp-loc g1000_eur.bim --gene-loc Rev.NCBI37.3_noMHC.gene.loc.txt --out annotated_Sept.noMHC.genes
+
+# Assign PGC3 p values to annotated genes:
+
+magma --bfile g1000_eur --pval PGC3_SCZ_wave3.european.autosome.public.v3.04082024.txt use=2,11 N=129124 --gene-annot annotated_Sept.noMHC.genes.genes.annot \
+--out PGC3_genes_Sept_noMHC
+
+# Basic GSA uncorrected and corrected
+
+./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model correct=none --out Final_08292025_uncorr_noMHC
+
+./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --out Final_08292025_corrected_noMHC
+
+
+# Conditional MAGMA 
+
+./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_synaptic_signaling --out Final_conditional_08292025.signaling.noMHC
+
+./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_postsynaptic --out Final_conditional_08282025.postsynaptic.noMHC
+
+./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_presynaptic --out Final_conditional_08282025.presynaptic.noMHC
+
+#### LDSC analysis #####
+
+# Make annotations:
+
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.1.bim --annot-file ./out_Your_set/chr.1.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.2.bim --annot-file ./out_Your_set/chr.2.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.3.bim --annot-file ./out_Your_set/chr.3.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.4.bim --annot-file ./out_Your_set/chr.4.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.5.bim --annot-file ./out_Your_set/chr.5.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.6.bim --annot-file ./out_Your_set/chr.6.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.7.bim --annot-file ./out_Your_set/chr.7.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.8.bim --annot-file ./out_Your_set/chr.8.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.9.bim --annot-file ./out_Your_set/chr.9.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.10.bim --annot-file ./out_Your_set/chr.10.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.11.bim --annot-file ./out_Your_set/chr.11.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.12.bim --annot-file ./out_Your_set/chr.12.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.13.bim --annot-file ./out_Your_set/chr.13.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.14.bim --annot-file ./out_Your_set/chr.14.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.15.bim --annot-file ./out_Your_set/chr.15.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.16.bim --annot-file ./out_Your_set/chr.16.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.17.bim --annot-file ./out_Your_set/chr.17.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.18.bim --annot-file ./out_Your_set/chr.18.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.19.bim --annot-file ./out_Your_set/chr.19.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.20.bim --annot-file ./out_Your_set/chr.20.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.21.bim --annot-file ./out_Your_set/chr.21.annot.gz
+python ~/statsgen/LDSC/base/scripts/make_annot.py --bed-file ~/statsgen/LDSC/Your_set_100k.bed --bimfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.22.bim --annot-file ./out_Your_set/chr.22.annot.gz
+
+# Calculate LD score:
+
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.1 --anno ./out_Your_set/chr.1.annot.gz --out ./out_Your_set/chr.1 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.1.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.2 --anno ./out_Your_set/chr.2.annot.gz --out ./out_Your_set/chr.2 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.2.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.3 --anno ./out_Your_set/chr.3.annot.gz --out ./out_Your_set/chr.3 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.3.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.4 --anno ./out_Your_set/chr.4.annot.gz --out ./out_Your_set/chr.4 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.4.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.5 --anno ./out_Your_set/chr.5.annot.gz --out ./out_Your_set/chr.5 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.5.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.6 --anno ./out_Your_set/chr.6.annot.gz --out ./out_Your_set/chr.6 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.6.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.7 --anno ./out_Your_set/chr.7.annot.gz --out ./out_Your_set/chr.7 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.7.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.8 --anno ./out_Your_set/chr.8.annot.gz --out ./out_Your_set/chr.8 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.8.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.9 --anno ./out_Your_set/chr.9.annot.gz --out ./out_Your_set/chr.9 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.9.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.10 --anno ./out_Your_set/chr.10.annot.gz --out ./out_Your_set/chr.10 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.10.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.11 --anno ./out_Your_set/chr.11.annot.gz --out ./out_Your_set/chr.11 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.11.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.12 --anno ./out_Your_set/chr.12.annot.gz --out ./out_Your_set/chr.12 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.12.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.13 --anno ./out_Your_set/chr.13.annot.gz --out ./out_Your_set/chr.13 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.13.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.14 --anno ./out_Your_set/chr.14.annot.gz --out ./out_Your_set/chr.14 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.14.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.15 --anno ./out_Your_set/chr.15.annot.gz --out ./out_Your_set/chr.15 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.15.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.16 --anno ./out_Your_set/chr.16.annot.gz --out ./out_Your_set/chr.16 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.16.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.17 --anno ./out_Your_set/chr.17.annot.gz --out ./out_Your_set/chr.17 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.17.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.18 --anno ./out_Your_set/chr.18.annot.gz --out ./out_Your_set/chr.18 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.18.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.19 --anno ./out_Your_set/chr.19.annot.gz --out ./out_Your_set/chr.19 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.19.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.20 --anno ./out_Your_set/chr.20.annot.gz --out ./out_Your_set/chr.20 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.20.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.21 --anno ./out_Your_set/chr.21.annot.gz --out ./out_Your_set/chr.21 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.21.snp
+python ~/statsgen/LDSC/base/scripts/ldsc.py --l2 --thin-annot --ld-wind-cm 1 --bfile ~/statsgen/LDSC/base/referencefiles/1000G_EUR_Phase3_plink/1000G.EUR.QC.22 --anno ./out_Your_set/chr.22.annot.gz --out ./out_Your_set/chr.22 --print-snps ~/statsgen/LDSC/base/referencefiles/hapmap3_snps/hm.22.snp
+
+# Calculate heritability:
+
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/scz_PGC3_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/scz_PGC3_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/ADHD_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/ADHD_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/bmi_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/bmi_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/bp3_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/bp3_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/height_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/height_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/autism_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/autism_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/mdd_ex23andMe_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/mdd_ex23andMe_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/alcohol_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/alcohol_ldscore.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/Alzheimer_ldscore3.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/Alzheimer_ldscore3.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/epilepsyAll.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/epilepsyAll.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/intelligence.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/intelligence.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/MDD_ldscore_PGC_UKB_23andme.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/MDD_ldscore_PGC_UKB_23andme.out --print-coefficients
+python ~/statsgen/LDSC/base/scripts/ldsc.py --h2 ~/statsgen/LDSC/base/gwas_brain/smoking_ldscore.gz --w-ld-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --ref-ld-chr ./out_Your_set/chr.,~/statsgen/LDSC/base/baseline2/baselineLD. --overlap-annot --frqfile-chr ~/statsgen/LDSC/base/referencefiles/1000G_Phase3_frq/1000G.EUR.QC. --out ./out_Your_set_2/smoking_ldscore.out --print-coefficients
+
+
+
+
+
 
