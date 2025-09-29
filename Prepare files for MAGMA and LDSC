@@ -30,14 +30,10 @@ message("Loading common gene sets for enrichment testing...")
 load(file.path(base_input_path, "Final_set_outliers_for_enrichment_07032024.RData"))
 load(file.path(base_input_path, "Differential_gene_expression_3regions_07112025.RData"))
 SynGO<-read_excel(file.path(base_input_path,"SynGO_final_07112025.xlsx"))
-load("/home/edata/.../.../DEG_Caudate_based_onAP_08082025.RData")
 
 message("Creating final sets shared by all regions...")
 
 Shared_by_clCoef_kIn <- c(ov[[1]], ov[[2]])
-
-# DEGs_shared<-calculate.overlap(x=list(DEGs[[1]]$Symbol,DEGs[[2]]$Symbol,DEGs[[3]]$Symbol)) 
-# DEGs_shared_final<-DEGs_shared$a5 # Only 3 genes, no need to use
 
 # Recursive function to remove specified name from all levels of a list
 # Original function, adapted slightly for clarity.
@@ -53,6 +49,7 @@ stripname <- function(x, name_to_strip) {
 }
 
 # Function to process Excel data into a named list of gene vectors
+
 process_excel_data <- function(excel_df, split_by_col, gene_col) {
   dt <- setDT(excel_df)
   # Split into list by the specified column
@@ -81,35 +78,7 @@ library(dplyr)
 #' This function takes a single-column data frame or vector of gene symbols and
 #' joins it with a symbol mapping data frame. It then extracts Ensembl gene
 #' IDs and a deduplicated list of HGNC symbols.
-#'
-#' @param initial_data A single-column data frame or vector containing HGNC symbols.
-#' @param symbol_map A data frame with at least two columns: 'hgnc_symbol' and
-#'   'ensembl_gene_id'. This data frame is used for the inner join.
-#'
-#' @return A list containing three elements:
-#'   - `joined_data`: The final data frame after the inner join.
-#'   - `ensembl_ids`: A vector of all Ensembl gene IDs from the joined data.
-#'   - `unique_hgnc_symbols`: A vector of unique HGNC symbols.
-#'
-#' @examples
-#' # --- Create example data to demonstrate the function ---
-#'
-#' # Mock data for the initial HGNC symbols
-#' mock_initial_data <- data.frame(
-#'   hgnc_symbol = c("TP53", "BRCA1", "TP53", "EGFR", "MYC")
-#' )
-#'
-#' # Mock data for the symbol mapping table
-#' mock_symbol_map <- data.frame(
-#'   hgnc_symbol = c("TP53", "BRCA1", "EGFR", "MYC", "PTEN"),
-#'   ensembl_gene_id = c("ENSG00000141510", "ENSG00000012048",
-#'                     "ENSG00000146648", "ENSG00000136997",
-#'                     "ENSG00000136998")
-#' )
-#'
-#' # Run the function with the example data
 
-#'
 process_gene_data <- function(initial_data, symbol_map) {
   # 1. Convert initial_data to a data frame and rename the column
   #    The as.data.frame() call handles vectors and existing data frames.
@@ -150,16 +119,10 @@ print(results_kIn_spec$unique_hgnc_symbols)
 gene_sets_for_MAGMA <- list(
   "C" = results_C_spec$unique_hgnc_symbols,
   "KIn" = results_kIn_spec$unique_hgnc_symbols,
-  "C-KIn shared" = results_C_kIn_shared$unique_hgnc_symbols, # Uncomment if you want to include this
-  "DEGs DLPFC" = results_DEG_DLPFC$unique_hgnc_symbols,
-  "DEGs Hippo" = results_DEG_Hippo$unique_hgnc_symbols,
-  "DEGs Caudate AP Up"= results_DEG_Caudate_AP_Up$unique_hgnc_symbols,
-  "DEGs Caudate AP Down"= results_DEG_Caudate_AP_Down$unique_hgnc_symbols,
-  "DEGs Caudate noAP"=results_DEG_Caudate_noAP$unique_hgnc_symbols,
+  "C-KIn shared" = results_C_kIn_shared$unique_hgnc_symbols, 
   "SynGO presynaptic"=results_SynGO_presynaptic$unique_hgnc_symbols,
   "SynGO postsynaptic"=results_SynGO_postsynaptic$unique_hgnc_symbols,
-  "SynGO signaling"=results_SynGO_signaling$unique_hgnc_symbols
-  )
+  "SynGO signaling"=results_SynGO_signaling$unique_hgnc_symbols)
 
 message("Gene sets to test loaded. Counts:")
 print(sapply(gene_sets_for_MAGMA, length))
@@ -173,12 +136,7 @@ Group=c(rep(names(gene_sets_for_MAGMA)[1],length(gene_sets_for_MAGMA[[1]])),
         rep(names(gene_sets_for_MAGMA)[3],length(gene_sets_for_MAGMA[[3]])),
         rep(names(gene_sets_for_MAGMA)[4],length(gene_sets_for_MAGMA[[4]])),
         rep(names(gene_sets_for_MAGMA)[5],length(gene_sets_for_MAGMA[[5]])),
-        rep(names(gene_sets_for_MAGMA)[6],length(gene_sets_for_MAGMA[[6]])),
-        rep(names(gene_sets_for_MAGMA)[7],length(gene_sets_for_MAGMA[[7]])),
-        rep(names(gene_sets_for_MAGMA)[8],length(gene_sets_for_MAGMA[[8]])),
-        rep(names(gene_sets_for_MAGMA)[9],length(gene_sets_for_MAGMA[[9]])),
-        rep(names(gene_sets_for_MAGMA)[10],length(gene_sets_for_MAGMA[[10]])),
-        rep(names(gene_sets_for_MAGMA)[11],length(gene_sets_for_MAGMA[[11]])))
+        rep(names(gene_sets_for_MAGMA)[6],length(gene_sets_for_MAGMA[[6]])))
         
 
 DT<-cbind(DT,Group)
