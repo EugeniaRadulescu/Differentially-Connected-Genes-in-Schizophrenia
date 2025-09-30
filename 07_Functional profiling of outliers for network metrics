@@ -1,8 +1,6 @@
 
 ######## Gene ontology analysis- GO:BP for DCG and DEG #########
 
-#### Cluster Profiler for DCG and DEGs caudate 08142025 #####
-
 load("/home/edata/.../Differential_gene_expression_3regions_07112025.RData")
 load("/home/edata/.../Final_set_outliers_for_enrichment_07032024.RData")
 
@@ -375,7 +373,6 @@ base_input_path <- "/home/edata/.../.../"
 # Load common gene sets for testing enrichment
 message("Loading common gene sets for enrichment testing...")
 
-
 load(file.path(base_input_path, "Final_set_outliers_for_enrichment_07032024.RData"))
 load(file.path(base_input_path, "Differential_gene_expression_3regions_07112025.RData"))
 
@@ -394,7 +391,6 @@ gene_sets_to_test <- list(
   "DEGs DLPFC" = DEGs[[1]]$Symbol,
   "DEGs Hippo" = DEGs[[2]]$Symbol,
   "DEGs Caudate"=DEGs[[3]]$Symbol)
-
 
 message("Gene sets to test loaded. Counts:")
 print(sapply(gene_sets_to_test, length))
