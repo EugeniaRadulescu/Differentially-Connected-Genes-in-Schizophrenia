@@ -29,15 +29,12 @@ adj_SCZ<-adjacency(datExpr=datExpr_SCZ,type="signed",power=10,
 
 # Scaled
 intraMod_con_CTRL_scaled<-intramodularConnectivity(adj_CTRL,colors = unmergedColors_CTRL,scaleByMax = TRUE)
-intraMod_con_SCZ<-intramodularConnectivity(adj_SCZ,colors = dynamicColors_CTRL,scaleByMax = TRUE)
+intraMod_con_SCZ<-intramodularConnectivity(adj_SCZ,colors = unmergedColors_CTRL,scaleByMax = TRUE)
 
-# Unscaled:
-intraMod_con_CTRL_ns<-intramodularConnectivity(adj_CTRL,colors = dynamicColors_CTRL,scaleByMax = FALSE)
-intraMod_con_SCZ_ns<-intramodularConnectivity(adj_SCZ,colors = dynamicColors_CTRL,scaleByMax = FALSE)
-
-intraMod_con_refCTRL_modules<-cbind(intraMod_con_CTRL_ns1,intraMod_con_SCZ_ns1)
+intraMod_con_refCTRL_modules<-cbind(intraMod_con_CTRL_scaled,intraMod_con_SCZ)
 Names<-c("kTotal_CTRL","KWithin_CTRL","kOut_CTRL","kDiff_CTRL","kTotal_SCZ","KWithin_SCZ","kOut_SCZ","kDiff_SCZ")
 names(intraMod_con_refCTRL_modules)<-Names
+
 # Of note, the adjustment of kIn by module size was done in Excel tables.
 
 # Calculate clustering coefficient
