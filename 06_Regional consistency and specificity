@@ -1,7 +1,7 @@
 
 ###### Test if the overlap between regions is significant and plots for suppl figure- directionality #########
 
-# This was a very difficult plot, take care of it!
+# This was a very difficult plot!
 
 load("/home/edata/.../.../Outliers_abs_and_directional_dlpfc_07132025.RData")
 load("/home/edata/.../.../Outliers_abs_and_directional_hippo_07132025.RData")
@@ -36,6 +36,7 @@ base_path <- "/home/edata/.../.../"
 message("Loading DLPFC, Hippo and Caudate Excel files...")
 
 # It's good practice to use file.path for constructing paths
+
 dlpfc_excel_path <- file.path(base_path, "intramodular_connectivity_DLPFC.xlsx")
 caudate_excel_path <- file.path(base_path, "Caudate", "intraMod_con_refCTRL_modules_01092023.xlsx")
 hippo_excel_path <- file.path(base_path, "Hippocampus", "intraMod_con_refCTRL_modules_12272022.xlsx")
@@ -46,7 +47,7 @@ DLPFC_all <- intramodular_conn_CTRL_and_SCZ$Symbol
 intraMod_con_refCTRL_modules_01092023 <- read_excel(caudate_excel_path)
 Caudate_all <- intraMod_con_refCTRL_modules_01092023$Symbol
 
-intraMod_con_refCTRL_modules_12272023 <- read_excel(hippo_excel_path) # Corrected variable name consistency
+intraMod_con_refCTRL_modules_12272023 <- read_excel(hippo_excel_path) # Corrected variable name for consistency
 Hippo_all <- intraMod_con_refCTRL_modules_12272023$Symbol
 
 # Create a named list of all gene symbols for overlap calculation
@@ -58,10 +59,8 @@ ov_All_regions <- calculate.overlap(all_regions_gene_lists)
 # Calculate total unique genes across all initial regions
 # Assuming 'total' represents the universe size for the supertest.
 # This calculation needs to be precise about what 'total' means.
-# If it's the union of all genes, then length(unique(unlist(all_regions_gene_lists))) is more appropriate.
-# Your original code sums lengths of all overlap combinations, which might not be the total universe.
-# Let's assume for now that 'total' is indeed the sum of lengths of all overlap categories as you defined it.
-total <- length(unique(unlist(all_regions_gene_lists))) # More concise way to sum lengths of list elements
+
+total <- length(unique(unlist(all_regions_gene_lists))) 
 
 rm(intraMod_con_refCTRL_modules_01092023, intraMod_con_refCTRL_modules_12272023, intramodular_conn_CTRL_and_SCZ)
 
@@ -71,7 +70,7 @@ message("Loading abs diff, pos diff and neg outlier sets...")
 
 # Define common part of file names for cleaner loading
 file_prefixes <- c("dlpfc", "hippo", "caudate")
-outlier_types <- c("kTotal_pos", "kTotal_neg", "kIn_pos", "kIn_neg", "C_pos", "C_neg")
+outlier_types <- c("kTotal_pos", "kTotal_neg", "kIn_pos", "kIn_neg", "C_pos", "C_neg") # This is by directionality, the same code is used for absolute differences
 
 # Initialize lists to store outlier data
 Out_kTotal_pos <- list()
@@ -100,7 +99,7 @@ for (prefix in file_prefixes) {
     
     Out_kTotal_pos[[region_name]] <- loaded_data[[paste0("kTotal_pos_", prefix)]]
     Out_kTotal_neg[[region_name]] <- loaded_data[[paste0("kTotal_neg_", prefix)]]
-    Out_kIn_pos[[region_name]] <- loaded_data[[paste0("kIn_pos_", prefix)]] # kIn_pos_dlpfc was a typo in original (kTotal_pos_dlpfc)
+    Out_kIn_pos[[region_name]] <- loaded_data[[paste0("kIn_pos_", prefix)]] 
     Out_kIn_neg[[region_name]] <- loaded_data[[paste0("kIn_neg_", prefix)]]
     Out_C_pos[[region_name]] <- loaded_data[[paste0("C_pos_", prefix)]]
     Out_C_neg[[region_name]] <- loaded_data[[paste0("C_neg_", prefix)]]
@@ -121,10 +120,6 @@ perform_overlap_analysis <- function(gene_sets_list, universe_size, title_suffix
   
   # Calculate expected and observed overlap
   length_gene_sets <- sapply(gene_sets_list, length)
-  # The expected overlap formula seems specific to your use case for dpsets/cpsets.
-  # For a general expected value of a three-way intersection of independent sets, it's (prod(lengths) / total^(k-1))
-  # where k is number of sets. Your num.expcted.overlap was total * prod(lengths/total) = prod(lengths) / total^(k-1)
-  # This seems correct for the probability calculation.
   num_expected_overlap <- universe_size * do.call(prod, as.list(length_gene_sets / universe_size))
   
   # Calculate common genes (intersection)
