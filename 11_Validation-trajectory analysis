@@ -176,7 +176,7 @@ pr_graph_test_res[fData(cds_hOLs_oligodendrocytes)$gene_short_name %in% c("OLIG1
 pr_graph_test_res[fData(cds_COs_astrocytes)$gene_short_name %in% c("GFAP"),]
 pr_graph_test_res[fData(cds_COs_neurons)$gene_short_name %in% c("GRM3","KCNH1","AKT3"),] 
 
-# Select genes with siggnificant Moran's statistics for two quartiles:
+# Select genes with siggnificant Moran's statistics for two quantiles:
 
 pr_deg_ids_OPC_95 <- row.names(subset(pr_graph_test_res, 
                                    morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
@@ -381,7 +381,6 @@ library(dplyr)
 
 # Assuming 'reducedTerms' contains all terms, and 'parent_terms_to_label'
 # contains the top unique parent terms with their coordinates and p.adjust values.
-# The code from our previous interaction should have created these dataframes.
 
 p<-ggplot(data = reducedTerms, aes(x = x, y = y))
 
