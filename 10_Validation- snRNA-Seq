@@ -151,7 +151,7 @@ Layers(merged_obj)
 
 collectGarbage()
 
-save(merged_obj,file="SZBDMultiSeq_CTRL_SCZ_n48_merged_seurat_integrated_joined_layers_05092025.RData") # This is in X:\...
+save(merged_obj,file="SZBDMultiSeq_CTRL_SCZ_n48_merged_seurat_integrated_joined_layers_05092025.RData") # This is in X:\...\; ideally, in a data storage folder
                                                                                                         # For cell proportion comparison you have to temporarily upload the object from there.
 
 
@@ -305,7 +305,6 @@ seurat_obj <- ConstructNetwork(
 )
 
 collectGarbage()
-
 
 PlotDendrogram(seurat_obj, main='Example_cell')
 
