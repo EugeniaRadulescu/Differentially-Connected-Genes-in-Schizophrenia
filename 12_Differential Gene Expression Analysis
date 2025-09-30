@@ -1,7 +1,6 @@
 
 ####### Differential Gene Expression Analysis #######
 
-
 message("\n--- Performing Differential Gene Expression Analysis ---")
 
 # Use the log2+1 transformed data before applying cleaningY():
@@ -28,7 +27,6 @@ for(i in 1:3){
   fitGene[[i]] <- lmFit(y[[i]], design = mod[[i]])
   eBGene[[i]] <- eBayes(fitGene[[i]])
 }
-
 
 # Quality-check:
 message("Plotting mean-variance trend...")
