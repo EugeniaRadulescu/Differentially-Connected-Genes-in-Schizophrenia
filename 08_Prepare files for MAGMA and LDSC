@@ -217,9 +217,8 @@ Processed_Data <- read_excel("Processed_Data.xlsx", sheet = "transposed", col_na
 
 outfile<- paste0("Gene_sets_MAGMA.sets") # This is the final file 
 
-#### Create bed files ########
 
-##### Bed file for LDSC outliers for perp #######
+##### Bed file for LDSC outliers for abs differences #######
 
 wind <- 100000
 
