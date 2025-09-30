@@ -311,6 +311,96 @@ hippo_kIn_data <- calculate_metrics(
 hippo_kIn_plot <- generate_density_plot(hippo_kIn_data)
 print(hippo_kIn_plot)
 
+##### For log2FC-abs diffs plots; Figures S13-S21 ######
+
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+
+# Create a data frame with your two variables
+data_for_density <- data.frame(
+  abs_diffs_log = log10(df$absDiffs_Cl_Caudate), # Log transform the abs_diffs data
+  log_fc = df$logFC
+)
+
+# Reshape the data for ggplot2
+data_for_density_long <- data_for_density %>%
+  pivot_longer(
+    cols = c(abs_diffs_log, log_fc),
+    names_to = "Metric",
+    values_to = "Value"
+  )
+
+# Create the density plot with a larger bandwidth
+ggplot(data_for_density_long, aes(x = Value, fill = Metric)) +
+  geom_density(alpha = 0.5, adjust = 1) +
+  labs(title = "Density Distribution of Two Metrics",
+       x = "Value",
+       y = "Density",
+       fill = "Metric") +
+  theme_minimal() +
+  scale_fill_manual(values = c("abs_diffs_log" = "blue", "log_fc" = "red"))
+
+res <- cor.test(data_for_density$abs_diffs_log, data_for_density$log_fc, method = "kendall")
+print(res)
+
+
+df<-sigGene_dx[[3]]
+rownames(df)<-NULL
+df<-cbind(Caudate_data,df)
+
+
+# Define your thresholds
+threshold_value_abs_diff <- 17.037
+threshold_value_logFC_min <- min(sigGene[[3]]$logFC)
+threshold_value_logFC_max <- max(sigGene[[3]]$logFC)
+threshold_value_p_value <- 0.05
+Outlier <- Out_kTotal_spec
+
+
+# Create a new column with three categories
+df$highlight_status <- case_when(
+  # Condition 1: Significant in DE and network metrics
+  (df$Symbol %in% Outlier) & 
+    (df$adj.P.Val < threshold_value_p_value) ~ "Outliers and significant in DE",
+  
+  # Highlight genes that are significant in network metrics
+  (df$Symbol %in% Outlier) ~ "Outliers for network metrics",
+  
+  # Highlight genes that are significant by p-value
+  (df$adj.P.Val < threshold_value_p_value) ~ "Significant in DE (p-value)",
+  
+  # All other genes are not significant
+  TRUE ~ "Not significant"
+)
+
+# Plotting with the new categories and colors
+ggplot(df, aes(x = logFC, y = absDiffs_K_Caudate)) +
+  geom_point(aes(color = highlight_status, 
+                 shape = case_when(
+                   highlight_status == "Outliers and significant in DE" ~ 19, # Filled circle for outliers
+                   highlight_status == "Outliers for network metrics" ~ 19, # Filled circle for outliers
+                   highlight_status == "Significant in DE (p-value)" ~ 2, # Empty triangle for DE
+                   TRUE ~ 1 # Empty circle for non-significant
+                 ),
+                 size = ifelse(highlight_status=="Significant in DE (p-value)", 1.5, 2))) + # Smaller size for triangles
+  scale_shape_identity() +
+  scale_size_identity() +
+  geom_hline(yintercept = threshold_value_abs_diff, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = c(threshold_value_logFC_min, threshold_value_logFC_max), linetype = "dashed", color = "red") +
+  scale_color_manual(values = c(
+    "Outliers and significant in DE" = "greenyellow",
+    "Outliers for network metrics" = "blue",
+    "Significant in DE (p-value)" = "black",
+    "Not significant" = "grey90"
+  )) +
+  labs(title = "Gene Significance Across Two Metrics",
+       subtitle = "Significant points highlighted by category",
+       x = "Log Fold Change (logFC)",
+       y = "Absolute Difference (absDiffs_K_Caudate)") +
+  theme_minimal()
 
 
 
