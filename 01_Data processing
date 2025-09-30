@@ -1,58 +1,23 @@
 ######### Load the required packages ###########
 
-library(WGCNA) 
+# List of CRAN packages (standard repositories)
+cran_packages <- c(
+    "WGCNA", "plyr", "sva", "limma", "knitr", "biomaRt", "ggplot2",
+    "ppcor", "Hmisc", "ggpmisc", "igraph", "tibble", "dplyr",
+    "genefilter", "data.table", "VennDiagram", "gridExtra", "readxl",
+    "openxlsx", "pheatmap", "ComplexHeatmap", "circlize", "RColorBrewer",
+    "rrvgo", "MASS", "flextable", "psych", "huxtable", "kableExtra",
+    "tidyr", "vtable", "table1", "variancePartition", "GGally",
+    "broom", "eulerr", "GeneOverlap", "SuperExactTest", "jaffelab",
+    "matrixStats", "lattice"
+)
 
-options(stringsAsFactors=FALSE)
+# List of Bioconductor packages (often require special installation)
+bioconductor_packages <- c(
+    "SummarizedExperiment", "clusterProfiler", "org.Hs.eg.db",
+    "GOSemSim", "recount","vsn"
+)
 
-library(SummarizedExperiment)
-library(plyr)
-library(sva)
-library(limma)
-library(clusterProfiler)
-library(org.Hs.eg.db)
-library(knitr)
-library(biomaRt) 
-library(ggplot2)
-library(ppcor)
-library(Hmisc)
-library(ggpmisc)
-library(igraph)
-library(tibble)
-library(dplyr)
-library(genefilter)
-library(data.table)
-library(VennDiagram)
-library(gridExtra)
-library(readxl)
-library(openxlsx)
-library(pheatmap)
-library(ComplexHeatmap)
-library(circlize)
-library(RColorBrewer)
-library(rrvgo) 
-library(MASS)
-library(flextable)
-library(psych)
-library(huxtable)
-library(kableExtra)
-library(tidyr)
-library(vtable)
-library(table1)
-library(variancePartition) 
-library(limma)
-library(GGally)
-library(broom)
-library(eulerr)
-library(GeneOverlap)
-library(SuperExactTest)
-library(GOSemSim)
-library(clusterProfiler)
-library(recount) 
-library(jaffelab)
-library(sva)
-library(matrixStats)
-library(lattice)
-library(vsn)
 
 ######### Samples selection and data normalization ###############
 
@@ -203,7 +168,7 @@ identical(Metadata$RNum,colnames(datExpr_minusOutliers)) # Sanity check:
 
 # Include genomic PCs in the covariates table:
 
-LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec <- read.delim("/directory/LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec.txt")
+LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec <- read.delim("/.../LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec.txt")
 ancestry<-LIBD_postmortem.AA_EA.info_0.8.cleaned_ids.updated_ids.nodup.call_0.8.updated_snp.geno_0.01.maf_0.05.hwe_0.001.noambig.rs.clump_200_100_0.2.twice.pca.evec
 
 index<-ancestry$IID %in% Metadata$BrNum
@@ -234,7 +199,6 @@ colnames(cov_rse[[1]])<-gsub("_.*","",colnames(cov_rse[[1]]))
 
 cov_rse_region<-cov_rse[[1]][,RNum_final]
 
-
 # Load the metadata for the three regions
 # Create the final table with demographics and technical covariates
 
@@ -251,7 +215,6 @@ writeData(wb, "summary", x = dt)
 saveWorkbook(wb, "Demographics_and_technical_covariates.xlsx", overwrite = TRUE)
 
 collectGarbage()
-
 
 ###### Check the samples overlap across the 3 regions #############
 
@@ -290,7 +253,6 @@ venn.plot <- venn.diagram(
 grid.draw(venn.plot)
 
 dev.off()
-
 
 #### Prepare data for expression cleaning with cleaningY() ######
 
@@ -489,7 +451,7 @@ plotCorrMatrix(C2_dlpfc, dendrogram = "none",
                main = "Canonical Correlations (DLPFC Reduced Model)")
 collectGarbage()
 
-# Clean the DLPFC expression data
+# Clean the DLPFC expression data; use the data after multicollinearity correction
 message("Cleaning DLPFC expression data...")
 covs_dlpfc <- "~ Dx + Sex + Race + Age + RIN + mitoRate + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 +
 snpPC7 + snpPC8 + snpPC9 + snpPC10 + PC1 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 +
