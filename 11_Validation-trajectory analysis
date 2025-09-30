@@ -1,0 +1,456 @@
+
+rm(list = ls())  # Clear the environment
+options(warn=-1) # Turn off warning message globally
+library(monocle3) # Load Monocle
+
+library(Seurat)
+library(SeuratWrappers)
+library(monocle3)
+
+# COs
+load("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/cds_COs_aligned_dx_07172025.RData")
+
+# hOLS
+GSE115011_marton_all_cells.csv <- read.csv("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/GSE115011_marton_all_cells.csv.gz")
+GSE<-GSE115011_marton_all_cells.csv
+
+GSE<-GSE115011_marton_all_cells.csv[!duplicated(GSE$Gene.name),]
+rownames(GSE)<-NULL
+GSE<-column_to_rownames(GSE,var="Gene.name")
+
+library(GEOquery)
+meta<-getGEO("GSE115011",GSEMatrix = FALSE)
+hOLs_Marton_metadata <- read.csv("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/hOLs_Marton_metadata.csv")
+
+hOLs <- CreateSeuratObject(counts = GSE, project = "hOLs", min.cells = 3, min.features = 200)
+hOLs
+hOLs[["percent.mt"]] <- PercentageFeatureSet(hOLs, pattern = "^MT-")
+VlnPlot(hOLs, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+hOLs <- NormalizeData(hOLs)
+
+# Convert seurat objects to cds for Monocle
+
+
+cds_COs <- cds
+cds_hOLs <- as.cell_data_set(hOLs)
+
+collectGarbage()
+
+table(pData(cds_COs)$MajorCellType3)
+
+
+# Pass TRUE if you want to see progress output on some of Monocle 3's operations
+DelayedArray:::set_verbose_block_processing(TRUE)
+
+# Passing a higher value will make some computations faster but use more memory. Adjust with caution!
+options(DelayedArray.block.size=1000e6)
+
+rowData(cds_hOLs)$gene_name <- rownames(cds_hOLs)
+rowData(cds_hOLs)$gene_short_name <- rowData(cds_hOLs)$gene_name
+rowData(cds_COs)$gene_name <- rownames(cds_COs)
+rowData(cds_COs)$gene_short_name <- rowData(cds_COs)$gene_name
+
+cds_hOLs <- preprocess_cds(cds_hOLs, num_dim = 50)
+cds_COs <- preprocess_cds(cds_COs, num_dim = 50)
+
+
+p1<-plot_pc_variance_explained(cds_hOLs)
+p2<-plot_pc_variance_explained(cds_COs)
+p1+p2
+
+# Annotate with SingleR using Darmanis data:
+
+library(SingleR)
+library(scRNAseq)
+library(scuttle)
+
+sce<-DarmanisBrainData(legacy=TRUE)
+sce<-sce[,colSums(counts(sce)) > 0]
+sce<-logNormCounts(sce)
+
+pred.hOLs<-SingleR(test=cds_hOLs,ref=sce,assay.type.test=1,labels=sce$cell.type)
+pred.COs<-SingleR(test=cds_COs,ref=sce,assay.type.test=1,labels=sce$cell.type)
+
+# Actual annotation:
+
+pData(cds_hOLs)$cell_type2<-pred.hOLs$labels
+table(pData(cds_hOLs)$cell_type2)
+
+pData(cds_COs)$cell_type2<-pred.COs$labels
+table(pData(cds_COs)$cell_type2)
+
+cds_hOLs <- reduce_dimension(cds_hOLs,reduction_method = "UMAP")
+p3<-plot_cells(cds_hOLs, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
+
+cds_COs <- reduce_dimension(cds_COs,reduction_method = "UMAP")
+p4<-plot_cells(cds_COs, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
+
+p3+p4
+
+#### Only for COs, if you use the original organoids file
+# plot_cells(cds_COs, color_cells_by="Dx", label_cell_groups=FALSE,cell_size=0.45,cell_stroke=0.2)
+# cds_COs <- align_cds(cds_COs, num_dim = 50, alignment_group = "Dx")
+# Now I saved a specific file with aligned cds!!!!!
+
+cds_hOLs <- reduce_dimension(cds_hOLs)
+cds_COs <- reduce_dimension(cds_COs)
+
+#plot_cells(cds_COs, color_cells_by="Dx", label_cell_groups=FALSE,cell_size=0.45,cell_stroke=0.3)
+
+cds_hOLs <- cluster_cells(cds_hOLs, resolution=1e-1)
+p5<-plot_cells(cds_hOLs,group_label_size = 5,cell_size=0.6,cell_stroke=0.2)
+
+cds_COs <- cluster_cells(cds_COs, resolution=1e-5)
+p6<-plot_cells(cds_COs,group_label_size = 5,cell_size=0.45,cell_stroke=0.2)
+
+p5+p6
+
+plot_cells(cds_hOLs, color_cells_by="partition", group_cells_by="partition",group_label_size = 5)
+plot_cells(cds_COs, color_cells_by="partition", group_cells_by="partition",group_label_size = 5)
+
+p7<-plot_cells(cds_hOLs, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
+p8<-plot_cells(cds_COs, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
+p7+p8
+
+cds_hOLs <- learn_graph(cds_hOLs) # Save the cds_hOLs with learned graph
+cds_COs <- learn_graph(cds_COs) # Save the cds_COs with learned graph
+
+# cds_hOLs<-order_cells(cds_hOLs)
+
+table(pData(cds_hOLs)$cell_type2)
+table(pData(cds_COs)$cell_type2)
+
+# This is better:
+
+get_earliest_principal_node <- function(cds_hOLs, time_bin='oligodendrocytes'){
+  cell_ids <- which(colData(cds_hOLs)[, "cell_type2"] == time_bin)
+  
+  closest_vertex <-
+    cds_hOLs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds_hOLs), ])
+  root_pr_nodes <-
+    igraph::V(principal_graph(cds_hOLs)[["UMAP"]])$name[as.numeric(names
+                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+}
+
+get_earliest_principal_node <- function(cds_COs, time_bin='fetal_replicating'){
+  cell_ids <- which(colData(cds_COs)[, "cell_type2"] == time_bin)
+  
+  closest_vertex <-
+    cds_COs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds_COs), ])
+  root_pr_nodes <-
+    igraph::V(principal_graph(cds_COs)[["UMAP"]])$name[as.numeric(names
+                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+}
+
+cds_hOLs <- order_cells(cds_hOLs, root_pr_nodes=get_earliest_principal_node(cds_hOLs))
+cds_COs <- order_cells(cds_COs, root_pr_nodes=get_earliest_principal_node(cds_COs))
+
+plot_cells(cds_COs_fetal_Q,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE,
+           cell_size=0.8,cell_stroke=0.2,
+           graph_label_size=3)
+
+cds_hOLs_OPC <- choose_cells(cds_hOLs)
+cds_hOLs_oligodendrocytes <- choose_cells(cds_hOLs)
+cds_COs_astrocytes <- choose_cells(cds_COs)
+cds_COs_neurons <- choose_cells(cds_COs)
+cds_COs_fetal_Q <- choose_cells(cds_COs)
+cds_COs_fetal_Repl <- choose_cells(cds_COs)
+
+pr_graph_test_res <- graph_test(cds_COs_neurons, neighbor_graph="knn", cores=8)
+
+print(dplyr::add_rownames(pr_graph_test_res) %>%
+        dplyr::arrange(plyr::desc(morans_test_statistic), plyr::desc(-q_value)) %>% head(200),n=200)
+
+pr_graph_test_res[fData(cds_hOLs_oligodendrocytes)$gene_short_name %in% c("OLIG1","OLIG2","MAG","PLP1"),] 
+pr_graph_test_res[fData(cds_COs_astrocytes)$gene_short_name %in% c("GFAP"),]
+pr_graph_test_res[fData(cds_COs_neurons)$gene_short_name %in% c("GRM3","KCNH1","AKT3"),] # Just and example, to see for one or more genes
+
+pr_deg_ids_OPC_95 <- row.names(subset(pr_graph_test_res, 
+                                   morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_OPC_75 <- row.names(subset(pr_graph_test_res, 
+                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_Oli_95 <- row.names(subset(pr_graph_test_res, 
+                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_Oli_75 <- row.names(subset(pr_graph_test_res, 
+                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_Astro_95 <- row.names(subset(pr_graph_test_res, 
+                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_Astro_75 <- row.names(subset(pr_graph_test_res, 
+                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
+
+pr_deg_ids_neurons_95 <- row.names(subset(pr_graph_test_res, 
+                                        morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_neurons_75 <- row.names(subset(pr_graph_test_res, 
+                                        morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
+
+pr_deg_ids_fetal_Q_95 <- row.names(subset(pr_graph_test_res, 
+                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_fetal_Q_75 <- row.names(subset(pr_graph_test_res, 
+                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
+
+pr_deg_ids_fetal_Repl_95 <- row.names(subset(pr_graph_test_res, # Same as astrocytes, no need of it.
+                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
+pr_deg_ids_fetal_Repl_75 <- row.names(subset(pr_graph_test_res, 
+                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
+
+
+pr_deg_ids_Oli_hOLs_95<-pr_deg_ids_Oli_95
+pr_deg_ids_Oli_hOLs_75<-pr_deg_ids_Oli_75
+
+pr_deg_ids_OPC_hOLs_95<-pr_deg_ids_OPC_95
+pr_deg_ids_OPC_hOLs_75<-pr_deg_ids_OPC_75
+
+pr_deg_ids_Astro_COs_95<-pr_deg_ids_Astro_95
+pr_deg_ids_Astro_COs_75<-pr_deg_ids_Astro_75
+
+pr_deg_ids_neurons_COs_95<-pr_deg_ids_neurons_95
+pr_deg_ids_neurons_COs_75<-pr_deg_ids_neurons_75
+
+pr_deg_ids_fetal_Q_COs_95<-pr_deg_ids_fetal_Q_95
+pr_deg_ids_fetal_Q_COs_75<-pr_deg_ids_fetal_Q_75
+
+save.image("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/Monocle_COs_hOLs_final_07172024.RData")
+
+load("~/data-symlink/Data_storage_from_Single_cell_Apr2025/From_Monocle_07162025/Monocle_COs_hOLs_final_07172024.RData")
+
+
+Gene_sets_from_trajectory_75<-list(pr_deg_ids_Astro_COs_75=pr_deg_ids_Astro_COs_75,
+                                pr_deg_ids_fetal_Q_COs_75=pr_deg_ids_fetal_Q_COs_75,
+                                pr_deg_ids_neurons_COs_75=pr_deg_ids_neurons_COs_75,
+                                pr_deg_ids_Oli_hOLs_75=pr_deg_ids_Oli_hOLs_75,
+                                pr_deg_ids_OPC_hOLs_75=pr_deg_ids_OPC_hOLs_75)
+
+names(Gene_sets_from_trajectory_75)<-c("Astrocytes COs","Fetal quiescent COs",
+                                    "Neurons COs","Oligodendrocytes hOLs","OPC hOLs")
+
+
+
+save(Gene_sets_from_trajectory_95,Gene_sets_from_trajectory_75,file="Gene_sets_from_trajectory.RData")
+
+##### Compare cluster for COs and hOLs gene sets 07172025 #######
+
+library(clusterProfiler)
+library(readxl)
+
+intramodular_conn_CTRL_and_SCZ_05092023 <- read_excel("~/data-symlink/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/intramodular_conn_CTRL_and_SCZ_05092023.xlsx")
+
+Universe<-intramodular_conn_CTRL_and_SCZ_05092023$Gene_Symbol
+
+library(org.Hs.eg.db)
+
+load("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/Gene_sets_from_trajectory.RData")
+
+Organoids_genes<-unlist(Gene_sets_from_trajectory_75)
+
+Group<-c(rep("Astrocytes COs",length(Gene_sets_from_trajectory_75[[1]])),
+         rep("Fetal quiescent COs",length(Gene_sets_from_trajectory_75[[2]])),
+         rep("Neurons COs",length(Gene_sets_from_trajectory_75[[3]])),
+         rep("Oligodendrocytes hOLs",length(Gene_sets_from_trajectory_75[[4]])),
+         rep("OPC hOLs",length(Gene_sets_from_trajectory_75[[5]])))
+         
+Organoids_genes<-as.data.frame(cbind(Organoids_genes,Group))
+view(Organoids_genes)
+names(Organoids_genes)<-c("Symbol","Group")
+
+# Compare cluster:
+
+formula_res <- compareCluster(Symbol~Group, data=Organoids_genes, fun="enrichGO",OrgDb = org.Hs.eg.db,
+                              keyType = "SYMBOL",ont = "BP",
+                              pvalueCutoff = 0.05,
+                              minGSSize    = 10,
+                              maxGSSize    = 500,
+                              pAdjustMethod = "bonferroni",
+                              universe=Universe,
+                              qvalueCutoff = 0.05)
+
+
+formula_test<-formula_res
+
+
+formula_final<-clusterProfiler::simplify(formula_test,cutoff = 0.7,
+                                         by = "p.adjust",
+                                         select_fun = min,
+                                         measure = "Wang",
+                                         semData = NULL)
+
+pp <- enrichplot::dotplot(formula_final, x="Modules",showCategory = 5,label_format = 120) + facet_grid(. ~ Group) +
+  aes(x=as.factor(Group)) + xlab("Modules") +
+  scale_fill_gradient(low="red",high="grey80",
+                      guide=guide_colorbar(reverse=TRUE, order=1)) +
+  guides(size = guide_legend(override.aes=list(shape=1))) +
+  theme(panel.grid.major.y = element_line(linetype='dotted', color='#808080'),
+        panel.grid.major.x = element_blank())
+
+
+pp + theme(axis.text.x = element_text(colour="black",face="bold",size=10,angle = 60,vjust = 0.5, hjust=0.5),
+           axis.text.y = element_text(colour="black",face="bold",size=10),
+           strip.text = element_text(size = 11,face="bold",colour = "darkred"))
+
+##### rrvgo for Semantic Similarities Between Cell Types organoids #####
+
+# This section assumes `formula_final` object is available from the enrichment analysis.
+# For demonstration purposes, if `formula_final` is not present, skip or create a dummy.
+if (exists("formula_final") && inherits(formula_final, "compareClusterResult")) {
+  message("Calculating semantic similarity and reducing terms with rrvgo...")
+  
+  simMatrix <- calculateSimMatrix(
+    formula_final@compareClusterResult$ID,
+    orgdb = "org.Hs.eg.db",
+    ont = "BP",
+    method = "Wang"
+  )
+  
+  scores <- setNames(-log10(formula_final@compareClusterResult$qvalue), formula_final@compareClusterResult$ID)
+  
+  reducedTerms <- reduceSimMatrix(
+    simMatrix,
+    scores = scores,
+    threshold = 0.8, # 0.9 for organoids
+    orgdb = "org.Hs.eg.db"
+  )
+  
+  # Plotting with rrvgo
+  heatmapPlot(simMatrix, reducedTerms, annotateParent = TRUE, annotationLabel = "parentTerm", fontsize = 6) %>% print()
+  treemapPlot(reducedTerms) %>% print()
+  scatterPlot(simMatrix, reducedTerms) %>% print()
+  
+  # Store results for different cell type groups if you run this iteratively
+  # Example for inhibitory, you would save it specific to inhibitory
+  simMatrix_Inhib <- simMatrix
+  reducedTerms_Inhib <- reducedTerms
+  
+  # Assuming you would run this for Glia and Excitatory as well, then save them all
+  # save(Glia_genes, Excit_genes, Inhib_genes, simMatrix_Excit, simMatrix_Glia, simMatrix_Inhib,
+  #      reducedTerms_Excit, reducedTerms_Glia, reducedTerms_Inhib,
+  #      file = here(base_dir, "For_rrvgo_cell_groups_glia_excit_inhib_", format(Sys.Date(), "%m%d%Y"), ".RData"))
+} else {
+  message("`formula_final` object not found or is not a 'compareClusterResult'. Skipping rrvgo section.")
+}
+
+collectGarbage()
+
+# Step 1: Calculate the x and y coordinates from the similarity matrix
+mds <- cmdscale(as.dist(1 - simMatrix), eig = TRUE, x.ret = TRUE)
+coords <- as.data.frame(mds$points)
+colnames(coords) <- c("x", "y")
+coords$go <- rownames(coords)
+
+# Step 2: Add the x and y coordinates to your reducedTerms data frame
+reducedTerms <- merge(reducedTerms, coords, by = "go", all.x = TRUE)
+
+# Step 3: Add the parent p.adjust values from the original enrichment object
+p_adjust_map <- setNames(formula_final@compareClusterResult$p.adjust, formula_final@compareClusterResult$ID)
+reducedTerms$parent_p.adjust <- p_adjust_map[reducedTerms$parent]
+
+# Assume 'reducedTerms' dataframe has already been created from
+# rrvgo::reduceSimMatrix and has 'x', 'y', and 'parent_p.adjust' columns added.
+
+# Step 1: Identify the unique parent GO IDs
+unique_parent_ids <- reducedTerms %>%
+  distinct(parent) %>%
+  pull(parent)
+
+# Step 2: Filter reducedTerms to keep only the rows that correspond to these unique parent IDs
+# We will use the 'go' column to do this, as 'go' is the unique ID for each row.
+# We also need to get the term name for each parent GO ID
+parent_terms_to_label <- reducedTerms %>%
+  filter(go %in% unique_parent_ids) %>%
+  arrange(parent_p.adjust) %>%
+  slice_head(n = 15)
+
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+
+# Assuming 'reducedTerms' contains all terms, and 'parent_terms_to_label'
+# contains the top unique parent terms with their coordinates and p.adjust values.
+# The code from our previous interaction should have created these dataframes.
+
+p<-ggplot(data = reducedTerms, aes(x = x, y = y))
+
+p +
+  # Layer 1: Plot all terms as small, light grey dots to give context.
+  geom_point(data = reducedTerms, aes(x = x, y = y),
+             color = "grey60", size = 3, alpha = 0.4) + # size 2 for organoids
+  # Layer 2: Plot the unique parent terms on top, mapping fill and size to p.adjust.
+  geom_point(data = parent_terms_to_label,
+             aes(x = x, y = y, size = parent_p.adjust, fill = parent_p.adjust),
+             shape = 21, alpha = 0.5, stroke = 1) +
+  # Layer 3: Add labels using ggrepel.
+  geom_text_repel(data = parent_terms_to_label,
+                  aes(x = x, y = y, label = parentTerm),
+                  size = 5.5,
+                  color = "black",
+                  box.padding = unit(1.5, "lines"), # 0.4 organoids
+                  # point.padding = unit(0.1, "lines"),# 0.5 organoids
+                  force = 6, # no force for organoids
+                  segment.color = 'black',
+                  segment.size = 0.4, # 0.5 for organoids
+                  min.segment.length = 0, # 0 for organoids
+                  max.overlaps =Inf)   +            # max.overlaps = Inf) + for organoids
+  # Define the size range for the parent term bubbles.
+  scale_size(range = c(5, 12)) +
+  # Define the fill color scale using a viridis palette.
+  # scale_fill_viridis_c(name = "Fill based on\np-adjust", direction = -1) +
+  scale_fill_distiller(palette = "Greens", name = "p-adjust", direction = 1) +  # "Blues" for organoids
+  # Use a minimalist theme to remove clutter.
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.3, face = "bold", margin = margin(b = 15)),
+    axis.title = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = c(0.95, 0.05),
+    legend.justification = c("right", "bottom"),
+    aspect.ratio = 1 # 1.2 organoids
+  ) +
+  labs(title = "GO:BP of genes from modules with DME") +
+  # This is the key line to remove the size legend!
+  guides(size = "none")
+
+
+##### Stop here for this analysis #####
+
+plot_cells(cds_hOLs, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
+
+marker_test_res <- top_markers(cds_hOLs, group_cells_by="cluster", 
+                               reduction_method = "UMAP",cores=4,verbose = TRUE,
+                               genes_to_test_per_group = 25,
+                               speedglm.maxiter = 25)
+
+
+sort(marker_test_res$gene_id)
+
+
+options(repr.plot.width=22, repr.plot.height=12)
+
+top_specific_markers <- marker_test_res %>%
+  filter(fraction_expressing >= 0.1) %>%
+  group_by(cell_group) %>%
+  top_n(1, pseudo_R2)
+
+top_specific_marker_ids <- unique(top_specific_markers %>% pull(gene_id))
+
+plot_genes_by_group(cds_hOLs,
+                    top_specific_marker_ids,
+                    group_cells_by="partition",
+                    ordering_type="maximal_on_diag",
+                    max.size=3)
+
+genes <- (marker_test_res %>%
+            dplyr::filter(mean_expression > 0.0003, fraction_expressing > 0.1) %>%
+            dplyr::group_by(cell_group) %>% dplyr::slice(which.max(specificity)))
+
+partitions_factors <- partitions(cds_hOLs, "UMAP")
+
