@@ -27,7 +27,7 @@ adj_SCZ<-adjacency(datExpr=datExpr_SCZ,type="signed",power=10,
 # Calculate intramodular connectivity using as reference CTRL modules for all six networks
 # This will give kIn and kTotal, but kTotal is not dependent on modules
 
-# Scaled
+# Scaled for DLPFC
 intraMod_con_CTRL_scaled<-intramodularConnectivity(adj_CTRL,colors = unmergedColors_CTRL,scaleByMax = TRUE)
 intraMod_con_SCZ<-intramodularConnectivity(adj_SCZ,colors = unmergedColors_CTRL,scaleByMax = TRUE)
 
@@ -39,6 +39,7 @@ names(intraMod_con_refCTRL_modules)<-Names
 
 # Calculate clustering coefficient
 # This is computationally demanding, it takes at least 12 hours.
+
 clCoeff_CTRL<-clusterCoef(adj_CTRL) 
 clCoeff_SCZ<-clusterCoef(adj_SCZ) 
 
@@ -160,20 +161,13 @@ Caudate_data$Symbol<-data$Symbol
 
 ###### Find outliers for differences, mainly absolute differences #######
 
-#### Find outliers for perpendiculars clean with chatGPT ####
-
 base_path <- "/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/"
 
 # 1. Load Libraries: Consolidate and check for duplicates.
-# 'data.table' is loaded twice in the original script.
-# 'segmented' and 'broom' are loaded but not used in the provided snippet.
-# If they are used elsewhere in your full script, keep them. Otherwise, remove.
+
 library(tidyr)
 library(dplyr)
 library(readxl)
-library(data.table) # Already loaded, no need to load again.
-# library(broom) # Not used in the provided code
-# library(segmented) # Not used in the provided code
 library(VennDiagram) # This library is essential for venn.diagram and should be explicitly loaded
 library(grid) # Already used in plot generation, good to load explicitly
 
@@ -185,13 +179,10 @@ data<- list(intramodular_connectivity_DLPFC.xlsx <- read_excel("intramodular_con
            intraMod_con_refCTRL_modules_12272022.xlsx <- read_excel("Hippocampus/intraMod_con_refCTRL_modules_12272022.xlsx"),
            intraMod_con_refCTRL_modules_01092023.xlsx <- read_excel("Caudate/intraMod_con_refCTRL_modules_01092023.xlsx"))
 
-# The following two are loaded but not used in the provided code.
-# If they are not relevant to this script, remove them.
-
-
 # 3. Initial Data Preparation
-# Using `dplyr::mutate` for creating new columns is generally more readable
+# Using `dplyr::mutate` for creating new columns 
 # and integrates well with the 'tidyverse' philosophy.
+
 data <- data[[3]] %>%
   as.data.table() %>% # Convert to data.table early if using data.table syntax extensively
   mutate(
@@ -203,7 +194,7 @@ data <- data[[3]] %>%
     abs_col_C=abs(C_CTRL-C_SCZ))
 
 # 4. Create a Reusable Function for Outlier Analysis and Venn Diagrams
-# This is the most significant improvement. It encapsulates the repetitive logic.
+
 perform_outlier_analysis_and_venn <- function(data, abs_col, diff_col, plot_title_abs, plot_title_diff, venn_names, filename_prefix) {
   # Calculate outliers for the absolute measure
   out_abs_values <- boxplot(data[[abs_col]], plot = FALSE)$out # plot = FALSE to suppress plot
@@ -314,8 +305,7 @@ kIn_neg_out_diff <- kIn_results$neg_out_diff_data
 
 
 # 7. Apply the function for Cl_coeff
-# Note: The original code had a typo in the last Venn diagram list (Neg_out_kIn$Symbol instead of Neg_out_C$Symbol).
-# This has been corrected here.
+
 Cl_coeff_results <- perform_outlier_analysis_and_venn(
   data = data,
   abs_col = "abs_col_C",
@@ -360,9 +350,6 @@ file_prefixes[3]
 # It assumes that variables like kTotal_out_abs, kTotal_out_abs_pos, etc.,
 # corresponding to the *current region being processed*, are available in the
 # environment where this function is called, or are passed as arguments.
-# For simplicity, I'm assuming they are available globally, as per your snippet.
-# If these variables themselves are dynamic or need to be loaded, the function
-# would need to handle that.
 
 create_and_save_directional_outliers <- function(region_name_short, date_suffix = "08212025") {
   
@@ -379,6 +366,7 @@ create_and_save_directional_outliers <- function(region_name_short, date_suffix 
   # MUST be defined and contain the correct data for the current region
   # (e.g., for 'dlpfc', kTotal_out_abs should contain DLPFC-specific data)
   # *before* this function is called for that region.
+  
   current_region_outlier_list[[paste0("kTotal_abs_", region_name_short)]] <- kTotal_out_abs
   current_region_outlier_list[[paste0("kTotal_neg_", region_name_short)]] <- kTotal_out_abs_neg
   current_region_outlier_list[[paste0("kTotal_pos_", region_name_short)]] <- kTotal_out_abs_pos
