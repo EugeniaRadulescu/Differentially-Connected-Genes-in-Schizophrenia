@@ -196,14 +196,10 @@ data<-intramodular_conn_CTRL_and_SCZ # DLPFC
 data<-intraMod_con_refCTRL_modules_12272022 # Hippo
 data<-intraMod_con_refCTRL_modules_01092023 # Caudate
 
-
 library(data.table)
 
 data<-setDT(data)
 names(data)
-
-
-library(data.table)
 
 calculate_metrics <- function(data, variable_name, region_name) {
   # Convert to data.table and prepare data
