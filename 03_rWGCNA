@@ -34,7 +34,7 @@ collectGarbage()
 dissTOM<-1-consensusTOM
 
 # Save dissTOM and clear the workspace
-# Of note, networks from rWGCNA are usually large files, approx. 3GB
+# Of note, networks from rWGCNA are usually large files, approx. 3GB each
 
 # Re-load the dissTOM
 
