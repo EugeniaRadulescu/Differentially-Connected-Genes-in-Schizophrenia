@@ -139,7 +139,6 @@ for(i in 1:nsets){
   rownames(multiExpr[[i]]$data)=dimnames(Bootstrap_Dx[[i]])[[1]]
 }
 
-
 exprSize=checkSets(multiExpr)
 
 rm(Bootstrap_Dx)
