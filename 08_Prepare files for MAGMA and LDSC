@@ -163,7 +163,7 @@ save(DT,file="DT.RData")
 # Define the path to your RData file.
 # Make sure this file is in the same directory as this script, or provide the full path.
 
-rdata_file_path <- "/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/DT.RData"
+rdata_file_path <- "/.../DT.RData"
 
 # Load the RData file. This will load the 'DT' data frame into your R session.
 tryCatch({
