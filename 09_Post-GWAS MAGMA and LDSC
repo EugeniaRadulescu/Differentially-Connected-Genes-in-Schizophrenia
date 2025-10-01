@@ -16,7 +16,6 @@ magma --bfile g1000_eur --pval PGC3_SCZ_wave3.european.autosome.public.v3.040820
 
 ./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --out Final_08292025_corrected_noMHC
 
-
 # Conditional MAGMA 
 
 ./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_synaptic_signaling --out Final_conditional_08292025.signaling.noMHC
