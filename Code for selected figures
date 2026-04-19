@@ -1,5 +1,5 @@
 
-##### Supplementary figure S1 ########
+##### Supplementary figure S1 #######
 
 analyze_WGCNA_regions <- function(region_name) {
   
