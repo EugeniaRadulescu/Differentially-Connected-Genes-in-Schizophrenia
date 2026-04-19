@@ -1,6 +1,5 @@
 
-##### This is an essential part of the analysis #######
-##### 1. Calculating the network parameters of interst #######
+##### 1. Calculating the network parameters of interest #######
 
 # Load the expression data and consensus tree & modules for the three regions:
 # Reference modules: CTRL modules
@@ -18,11 +17,12 @@ load("/home/edata/.../.../Consensus_tree_modulesColors_Caudate_CTRL_SCZ_12232022
 
 collectGarbage()
 
-adj_CTRL<-adjacency(datExpr=datExpr_CTRL,type="signed",power=10, # 11 for Caudate, 14 for Hippo
+adj_CTRL<-adjacency(datExpr=datExpr_CTRL,type="signed",power=10, # DLPFC=10, Caudate=11, Hippo=14
                     corFnc = "bicor")
 adj_SCZ<-adjacency(datExpr=datExpr_SCZ,type="signed",power=10,
                    corFnc = "bicor")
-# save(adj_SCZ,file="adjacency_SCZ_03132024.RData")
+
+# Save adjacency matrices
 
 # Calculate intramodular connectivity using as reference CTRL modules for all six networks
 # This will give kIn and kTotal, but kTotal is not dependent on modules
@@ -172,8 +172,6 @@ library(VennDiagram) # This library is essential for venn.diagram and should be 
 library(grid) # Already used in plot generation, good to load explicitly
 
 # 2. Data Loading: Use a list or a consistent naming convention if possible
-# If these files are always loaded together, consider a function or list.
-# For now, keep as is, but be mindful of their purpose.
 
 data<- list(intramodular_connectivity_DLPFC.xlsx <- read_excel("intramodular_connectivity_DLPFC.xlsx"),
            intraMod_con_refCTRL_modules_12272022.xlsx <- read_excel("Hippocampus/intraMod_con_refCTRL_modules_12272022.xlsx"),
