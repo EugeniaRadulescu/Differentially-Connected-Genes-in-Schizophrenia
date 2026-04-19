@@ -113,7 +113,7 @@ plotDendroAndColors(consTree_Dx, cbind(unmergedColors_Dx, moduleColors_merged_Dx
 
 save(consMEs_merged_Dx, moduleColors_merged_Dx, moduleLabels_merged_Dx, consTree_Dx, file = "Consensus-NetworkConstruction_merged_Modules_Dx.RData")
 
-##### Module preservation with WGCNA; CTRL in SCZ ########
+##### Module preservation with WGCNA; CTRL in SCZ #######
 
 # Load expression data, consensus trees and modules:
 collectGarbage()
