@@ -1,184 +1,147 @@
 
-##### Supplementary figure S1 #######
+###### Figure 2 revised 04192026 ########
 
-analyze_WGCNA_regions <- function(region_name) {
-  
-  # Set the base directory for the data files.
-  base_path <- "/home/edata/.../.../"
-  
-  # Construct the full path to the data file.
-  file_path <- file.path(base_path, "Consensus_tree_modulesColors_expr_CTRL_SCZ_10312022.RData")
-  
-  # Load the data from the specified file path.
-  # This assumes the file contains objects like unmergedLabels_CTRL, unmergedLabels_SCZ, etc.
-  load(file_path)
-  
-  # Re-label the consensus modules to match the CTRL-only analysis.
-  modLabCTRL_SCZ <- WGCNA::matchLabels(unmergedLabels_CTRL, unmergedLabels_SCZ)
-  moduleColorsCTRL_SCZ <- WGCNA::labels2colors(modLabCTRL_SCZ)
-  
-  # Create a data frame of module colors for plotting dendrograms.
-  datColors <- data.frame(moduleColorsCTRL_SCZ, unmergedColors_SCZ, unmergedColors_CTRL)
-  
-  # Calculate module overlap tables.
-  ovTable <- WGCNA::overlapTable(moduleColorsCTRL_SCZ, unmergedColors_SCZ)
-  ovTable1 <- WGCNA::overlapTable(moduleColorsCTRL_SCZ, unmergedColors_CTRL)
-  
-  # Prepare text matrices for the heatmaps.
-  textMatrix <- paste(signif(ovTable$pTable, 2))
-  dim(textMatrix) <- dim(ovTable$pTable)
-  
-  textMatrix1 <- paste(signif(ovTable1$pTable, 2))
-  dim(textMatrix1) <- dim(ovTable1$pTable)
-  
-  # Create plots.
-  # Set up the plotting window and margins for the heatmaps.
-  sizeGrWindow(12, 10)
-  par(mar = c(6, 8.5, 3, 3))
-  
-  # Plot the first heatmap for matched labels vs. SCZ modules.
-  WGCNA::labeledHeatmap(Matrix = ovTable$pTable,
-                 xLabels = colnames(ovTable$pTable),
-                 xSymbols = colnames(ovTable$pTable),
-                 yLabels = rownames(ovTable$pTable),
-                 ySymbols = rownames(ovTable$pTable),
-                 colorLabels = FALSE,
-                 colors = greenWhiteRed(50),
-                 textMatrix = textMatrix,
-                 setStdMargins = FALSE,
-                 cex.text = 0.5,
-                 zlim = c(-1, 1),
-                 main = paste("pValues for matched labels SCZ", region_name))
-
-  # Plot the second heatmap for matched labels vs. CTRL modules.
-  WGCNA::labeledHeatmap(Matrix = ovTable1$pTable,
-                 xLabels = colnames(ovTable1$pTable),
-                 xSymbols = colnames(ovTable1$pTable),
-                 yLabels = rownames(ovTable1$pTable),
-                 ySymbols = rownames(ovTable1$pTable),
-                 colorLabels = FALSE,
-                 colors = greenWhiteRed(50),
-                 textMatrix = textMatrix1,
-                 setStdMargins = FALSE,
-                 cex.text = 0.5,
-                 zlim = c(-1, 1),
-                 main = paste("pValues for matched labels CTRL", region_name))
-                 
-  # Plot dendrograms with module colors.
-  plotDendroAndColors(consTree_CTRL, datColors, c("matched modules", "SCZ modules", "CTRL modules"),
-                      dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05,
-                      main = paste("CTRL gene dendrogram and module colors for", region_name))
-  
-  plotDendroAndColors(consTree_SCZ, datColors, c("matched modules", "SCZ modules", "CTRL modules"),
-                      dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05,
-                      main = paste("SCZ gene dendrogram and module colors for", region_name))
-  
-  # Prepare the data frame for saving.
-  Symbol <- colnames(multiExpr[[1]]$data)
-  datColors$Symbol <- Symbol
-  datColors <- datColors[order(datColors$moduleColorsCTRL_SCZ, datColors$unmergedColors_SCZ, datColors$unmergedColors_CTRL), ]
-  
-  # Save the relevant objects to a new RData file.
-  output_filename <- paste0("Matched_color_modules_CTRL_SCZ_forClProfiler_", format(Sys.Date(), "%m%d%Y"), ".RData")
-  save(datColors, ovTable, ovTable1, textMatrix, textMatrix1, Symbol, file = output_filename)
-  
-  # Print confirmation message.
-  cat("Analysis complete for", region_name, ". Results saved to", output_filename, "\n")
-  
-  # Return the ordered data frame if needed for further use.
-  invisible(datColors)
-}
-
-# Apply the function for each brain region:
-# Example for "DLPFC"
-analyze_WGCNA_regions("DLPFC")
-
-###### Figure 2 ########
-
-# Load data tables that store differences and absolute differences for network metrics
-# Function to format data for the scatter-plot matrix
-
-library(data.table)
-
-#' @title A function to combine multiple data.tables into a single long-format data.table.
-#'
-#' @description This function takes a named list of data.tables, adds a new 'Region'
-#' column based on the list's names, standardizes the column names by removing the suffix,
-#' and then combines them into one long-format data.table.
-#'
-#' @param dt_list A named list of data.tables to be combined (e.g., list(DLPFC = DLPFC_data, ...)).
-#' @param suffixes A vector of suffixes to be removed from the column names (e.g., c("_DLPFC", "_Hippo")).
-#'
-#' @return A single long-format data.table with an added 'Region' column.
-#'
-#' @examples
-#' # Assume you have created your three data.tables: DLPFC_data, Hippo_data, Caudate_data
-#' # Combine them into a single data.table
-#'
-#' combined_dt <- combine_regions(
-#'   dt_list = list(DLPFC = DLPFC_data, Hippo = Hippo_data, Caudate = Caudate_data),
-#'   suffixes = c("_DLPFC", "_Hippo", "_Caudate")
-#' )
-
-combine_regions <- function(dt_list, suffixes) {
-  # Add a 'Region' column to each data.table
-  for (region_name in names(dt_list)) {
-    dt_list[[region_name]][, Region := region_name]
-  }
-  
-  # Get the common base column names
-  base_cols <- gsub(suffixes[1], "", names(dt_list[[1]]))
-  
-  # Standardize column names for all data.tables
-  for (i in seq_along(dt_list)) {
-    setnames(dt_list[[i]], old = names(dt_list[[i]])[1:length(base_cols)], new = base_cols)
-  }
-  
-  # Combine the data.tables into one long format
-  combined_dt <- rbindlist(dt_list)
-  
-  return(combined_dt)
-}
-
-
-# Create a named list of your data tables
-region_list <- list(DLPFC = DLPFC_data, Hippo = Hippo_data, Caudate = Caudate_data)
-
-# Specify the suffixes to remove
-region_suffixes <- c("_DLPFC", "_Hippo", "_Caudate")
-
-# Call the function to combine them
-final_combined_dt <- combine_regions(dt_list = region_list, suffixes = region_suffixes)
-
-# View the final data.table
-print(final_combined_dt)
-
-alldata_long<-final_combined_dt[,c(3,6,9,11)]
+# --- 1. Load Libraries ---
 
 library(GGally)
+library(ggplot2)
+library(gridExtra)
+library(gtable)
+library(grid)
 
-GGally::ggpairs(alldata_long,upper = list(continuous = GGally::wrap("cor", method = "kendall")),
-        aes(color = Region, alpha = 0.6)) 
+# Load the table with absolute differences in network metrics for all three regions in long format.
 
-p <- ggpairs(
+names(alldata_long)<-c("abs.diff kTot","abs.diff kIn","abs.diff C","Region")
+
+# --- 2. Define Plot Parameters (Assuming 'alldata_long' is available) ---
+vars <- c("abs.diff kTot","abs.diff kIn","abs.diff C") 
+
+# FIX: Set alignPercent = 0.5 for perfect horizontal centering
+my_cor_default_regional <- function(data, mapping, color = "black", size = 4, ...) {
+  p <- GGally::ggally_cor(data = data, mapping = mapping, method = "kendall", 
+                          alignPercent = 0.5, size = size, ...)
+  return(p)
+}
+
+# --- 3. Create the Base Plot and Apply Global Fixes ---
+p <- GGally::ggpairs(
   alldata_long,
-  mapping = ggplot2::aes(color = Region, alpha = 0.4),
-  upper = list(continuous = GGally::wrap("cor", method = "kendall")),
-  lower = list(continuous = wrap("points", alpha = 0.4,"shape"=21)),
-  title = "Brain regional correlations between absolute differences in network metrics"
+  mapping = ggplot2::aes(color = Region, alpha = 0.3),
+  upper = list(continuous = my_cor_default_regional),
+  lower = list(continuous = GGally::wrap("points", alpha = 0.3, "shape" = 21)),
+  title = NULL,
+  axisLabels = "none" # Important to keep clean initially
 )
 
-p
-
-for(i in 1:p$nrow) {
-  for(j in 1:p$ncol){
-    p[i,j] <- p[i,j] + 
+for (i in 1:p$nrow) {
+  for (j in 1:p$ncol){
+    p[i,j] <- p[i,j] +
       scale_fill_manual(values=c("green4", "darkorange3", "deepskyblue3")) +
-      scale_color_manual(values=c("green4", "darkorange3", "deepskyblue3"))  
+      scale_color_manual(values=c("green4", "darkorange3", "deepskyblue3")) +
+      ggplot2::guides(alpha = "none")
   }
 }
 
-p
+# --- 4. Define Custom Theme Fixes ---
+theme_cor_panel <- ggplot2::theme(
+  axis.title = ggplot2::element_blank(), 
+  axis.text = ggplot2::element_blank(), 
+  axis.ticks = ggplot2::element_blank(), 
+  axis.line = ggplot2::element_blank(), 
+  panel.border = ggplot2::element_blank(),
+  plot.subtitle = ggplot2::element_text(size = 9, hjust = 0.5, face = "bold")
+)
+
+theme_diag_panel <- ggplot2::theme(plot.subtitle = element_text(size = 8, hjust = 0.5))
+
+# **NEW: Theme to restore X/Y Axis Text/Lines for density plots (p[3,3] and p[1,1])**
+theme_density_axis_restore <- ggplot2::theme(
+  axis.title.x = ggplot2::element_text(size = 10),
+  axis.text.x = ggplot2::element_text(size = 8),
+  axis.ticks.x = ggplot2::element_line(),
+  axis.line.x = ggplot2::element_line(),
+  axis.title.y = ggplot2::element_text(size = 10, angle = 90), 
+  axis.text.y = ggplot2::element_text(size = 8),
+  axis.ticks.y = ggplot2::element_line(),
+  axis.line.y = ggplot2::element_line()
+)
+
+# Theme to restore X/Y axis for box plots and remove border
+theme_box_plot_final_fix <- ggplot2::theme(
+  axis.title.y = ggplot2::element_text(size = 10, angle = 90), 
+  axis.text.y = ggplot2::element_text(size = 8),
+  axis.ticks.y = ggplot2::element_line(),
+  axis.line.y = ggplot2::element_line(),
+  axis.title.x = ggplot2::element_text(size = 10), 
+  axis.text.x = ggplot2::element_text(size = 8),
+  axis.ticks.x = ggplot2::element_line(),
+  axis.line.x = ggplot2::element_line(),
+  panel.border = ggplot2::element_blank(),
+  plot.subtitle = ggplot2::element_blank() 
+)
+
+
+# --- 5. Apply Panel-Specific Customizations ---
+
+# A. Upper Triangle (Correlation)
+for (i in 1:3) {
+  for (j in (i + 1):3) {
+    p[i, j] <- p[i, j] + 
+      ggplot2::labs(subtitle = paste0("Kendall's ", expression(tau), ": ", vars[i], " vs ", vars[j])) +
+      theme_cor_panel
+  }
+}
+
+# B. Diagonal (Distribution) - Applying general theme
+for (i in 1:3) {
+  p[i, i] <- p[i, i] + 
+    ggplot2::labs(subtitle = "Distribution") +
+    theme_diag_panel
+}
+
+# C. BOX PLOTS (Column 4) - X/Y labels and theme
+p_1_4_fixed <- p[1, 4] + ggplot2::labs(y = vars[1], x = NULL) + theme_box_plot_final_fix
+p_2_4_fixed <- p[2, 4] + ggplot2::labs(y = vars[2], x = NULL) + theme_box_plot_final_fix
+p_3_4_fixed <- p[3, 4] + ggplot2::labs(y = vars[3], x = "Region") + theme_box_plot_final_fix
+
+# D. **FIX: LAST DENSITY PLOT p[3, 3] - Restore X/Y Axis Labels**
+p[3, 3] <- p[3, 3] +
+  ggplot2::labs(x = vars[3], y = "density") + # <--- SET THE MISSING LABELS
+  theme_density_axis_restore                   # <--- RESTORE AXIS TEXT/LINES
+
+# E. FIX: FIRST DENSITY PLOT p[1, 1] - Restore Y-Axis Label
+# The x-axis is already fine from the scatterplots below it (p[2,1], p[3,1]), but the y-axis needs restoration
+p[1, 1] <- p[1, 1] + 
+  ggplot2::labs(y = "density") + # <--- SET Y LABEL
+  theme_density_axis_restore
+
+
+# --- 6. Assemble the Final Plot ---
+
+plot_list_3x4 <- list(
+  p[1, 1], p[1, 2], p[1, 3], p_1_4_fixed,
+  p[2, 1], p[2, 2], p[2, 3], p_2_4_fixed,
+  p[3, 1], p[3, 2], p[3, 3], p_3_4_fixed
+)
+
+combined_plots_3x4 <- gridExtra::arrangeGrob(grobs = plot_list_3x4, nrow = 3, ncol = 4)
+
+# Extract and Style the Legend ("Region")
+plot_with_legend_style <- p_1_4_fixed + 
+  ggplot2::theme(legend.position = "bottom", legend.title = ggplot2::element_text(face = "bold", hjust = 0))
+
+plot_legend <- gtable_filter(ggplot2::ggplotGrob(plot_with_legend_style), "guide-box")
+
+# Final arrangement
+title_grob <- grid::textGrob("Brain regional correlations between absolute differences in network metrics",
+                             gp = grid::gpar(fontsize = 14, fontface = "bold"))
+final_plot <- gridExtra::grid.arrange(
+  title_grob, combined_plots_3x4, plot_legend,
+  nrow = 3, heights = c(0.05, 0.9, 0.05),
+  vp=viewport(width=0.9, height=0.9)
+)
+
+print(final_plot)
 
 ###### For figure 3 paper final ###########
 
@@ -310,6 +273,103 @@ hippo_kIn_data <- calculate_metrics(
 # Generate the plot
 hippo_kIn_plot <- generate_density_plot(hippo_kIn_data)
 print(hippo_kIn_plot)
+
+
+##### Supplementary figure S1 #######
+
+analyze_WGCNA_regions <- function(region_name) {
+  
+  # Set the base directory for the data files.
+  base_path <- "/home/edata/.../.../"
+  
+  # Construct the full path to the data file.
+  file_path <- file.path(base_path, "Consensus_tree_modulesColors_expr_CTRL_SCZ_10312022.RData")
+  
+  # Load the data from the specified file path.
+  # This assumes the file contains objects like unmergedLabels_CTRL, unmergedLabels_SCZ, etc.
+  load(file_path)
+  
+  # Re-label the consensus modules to match the CTRL-only analysis.
+  modLabCTRL_SCZ <- WGCNA::matchLabels(unmergedLabels_CTRL, unmergedLabels_SCZ)
+  moduleColorsCTRL_SCZ <- WGCNA::labels2colors(modLabCTRL_SCZ)
+  
+  # Create a data frame of module colors for plotting dendrograms.
+  datColors <- data.frame(moduleColorsCTRL_SCZ, unmergedColors_SCZ, unmergedColors_CTRL)
+  
+  # Calculate module overlap tables.
+  ovTable <- WGCNA::overlapTable(moduleColorsCTRL_SCZ, unmergedColors_SCZ)
+  ovTable1 <- WGCNA::overlapTable(moduleColorsCTRL_SCZ, unmergedColors_CTRL)
+  
+  # Prepare text matrices for the heatmaps.
+  textMatrix <- paste(signif(ovTable$pTable, 2))
+  dim(textMatrix) <- dim(ovTable$pTable)
+  
+  textMatrix1 <- paste(signif(ovTable1$pTable, 2))
+  dim(textMatrix1) <- dim(ovTable1$pTable)
+  
+  # Create plots.
+  # Set up the plotting window and margins for the heatmaps.
+  sizeGrWindow(12, 10)
+  par(mar = c(6, 8.5, 3, 3))
+  
+  # Plot the first heatmap for matched labels vs. SCZ modules.
+  WGCNA::labeledHeatmap(Matrix = ovTable$pTable,
+                 xLabels = colnames(ovTable$pTable),
+                 xSymbols = colnames(ovTable$pTable),
+                 yLabels = rownames(ovTable$pTable),
+                 ySymbols = rownames(ovTable$pTable),
+                 colorLabels = FALSE,
+                 colors = greenWhiteRed(50),
+                 textMatrix = textMatrix,
+                 setStdMargins = FALSE,
+                 cex.text = 0.5,
+                 zlim = c(-1, 1),
+                 main = paste("pValues for matched labels SCZ", region_name))
+
+  # Plot the second heatmap for matched labels vs. CTRL modules.
+  WGCNA::labeledHeatmap(Matrix = ovTable1$pTable,
+                 xLabels = colnames(ovTable1$pTable),
+                 xSymbols = colnames(ovTable1$pTable),
+                 yLabels = rownames(ovTable1$pTable),
+                 ySymbols = rownames(ovTable1$pTable),
+                 colorLabels = FALSE,
+                 colors = greenWhiteRed(50),
+                 textMatrix = textMatrix1,
+                 setStdMargins = FALSE,
+                 cex.text = 0.5,
+                 zlim = c(-1, 1),
+                 main = paste("pValues for matched labels CTRL", region_name))
+                 
+  # Plot dendrograms with module colors.
+  plotDendroAndColors(consTree_CTRL, datColors, c("matched modules", "SCZ modules", "CTRL modules"),
+                      dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05,
+                      main = paste("CTRL gene dendrogram and module colors for", region_name))
+  
+  plotDendroAndColors(consTree_SCZ, datColors, c("matched modules", "SCZ modules", "CTRL modules"),
+                      dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05,
+                      main = paste("SCZ gene dendrogram and module colors for", region_name))
+  
+  # Prepare the data frame for saving.
+  Symbol <- colnames(multiExpr[[1]]$data)
+  datColors$Symbol <- Symbol
+  datColors <- datColors[order(datColors$moduleColorsCTRL_SCZ, datColors$unmergedColors_SCZ, datColors$unmergedColors_CTRL), ]
+  
+  # Save the relevant objects to a new RData file.
+  output_filename <- paste0("Matched_color_modules_CTRL_SCZ_forClProfiler_", format(Sys.Date(), "%m%d%Y"), ".RData")
+  save(datColors, ovTable, ovTable1, textMatrix, textMatrix1, Symbol, file = output_filename)
+  
+  # Print confirmation message.
+  cat("Analysis complete for", region_name, ". Results saved to", output_filename, "\n")
+  
+  # Return the ordered data frame if needed for further use.
+  invisible(datColors)
+}
+
+# Apply the function for each brain region:
+# Example for "DLPFC"
+analyze_WGCNA_regions("DLPFC")
+
+
 
 ##### For log2FC-abs diffs plots; Figures S13-S21 ######
 
