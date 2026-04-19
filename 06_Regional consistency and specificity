@@ -1,11 +1,9 @@
 
 ###### Test if the overlap between regions is significant and plots for suppl figure- directionality #########
 
-# This was a very difficult plot!
 
-load("/home/edata/.../.../Outliers_abs_and_directional_dlpfc_07132025.RData")
-load("/home/edata/.../.../Outliers_abs_and_directional_hippo_07132025.RData")
-load("/home/edata/.../.../Outliers_abs_and_directional_caudate_07132025.RData")
+# Load the outliers for case-control differences in network aparameters.
+# Create three lists for each parameter
 
 Out_kTotal_abs<-list("DLPFC"=Out_abs_and_directional_dlpfc$kTotal_abs_dlpfc,
                      "Hippo"=Out_abs_and_directional_hippo$kTotal_abs_hippo,
