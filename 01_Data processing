@@ -21,8 +21,8 @@ bioconductor_packages <- c(
 
 ######### Samples selection and data normalization ###############
 
-# Load the SummarizedExperiment objects containing gene expression (bulk RNA-Seq) and degradation matrices for DLPFC, Hippocampus and Caudate
-
+# Load the SummarizedExperiment objects containing gene expression (bulk RNA-Seq) and degradation matrices for DLPFC, Hippocampus and Caudate;
+ 
 region=c('DLPFC','HIPPO','Caudate')
 
 ### Demographics:
@@ -374,7 +374,7 @@ print(names(info_hippo))
 print(names(info_caudate))
 
 message("Names of 'Metadata_Caudate':")
-print(names(Metadata_Caudate)) # This suggests separate metadata objects might be intended.
+print(names(Metadata_Caudate)) 
 
 # --- 2. Multicollinearity Assessment - General Approach ---
 
@@ -532,7 +532,7 @@ PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 + PC12 +
 PC13 + PC14 + snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
 snpPC8 + snpPC9 + snpPC10"
 
-mod_hippo <- model.matrix(as.formula(covs_hippo), data = info[[2]]) # Ensure 'info' is correct for Hippo
+mod_hippo <- model.matrix(as.formula(covs_hippo), data = info[[2]]) 
 cleanExprs_protectDx_hippo <- jaffelab::cleaningY(geneExpr_hippo, mod_hippo, P = 2)
 
 # save(cleanExprs_protectDx_hippo, info, covs_hippo, mod_hippo,
@@ -593,7 +593,7 @@ PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + PC11 +
 snpPC1 + snpPC2 + snpPC3 + snpPC4 + snpPC5 + snpPC6 + snpPC7 +
 snpPC8 + snpPC9 + snpPC10"
 
-mod_caudate <- model.matrix(as.formula(covs_caudate), data = info[[3]]) # Ensure 'info' is correct for Caudate
+mod_caudate <- model.matrix(as.formula(covs_caudate), data = info[[3]]) 
 cleanExprs_protectDx_caudate <- jaffelab::cleaningY(geneExpr_caudate, mod_caudate, P = 2)
 
 # save(cleanExprs_protectDx_caudate, info, covs_caudate, mod_caudate,
