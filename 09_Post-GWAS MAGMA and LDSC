@@ -3,26 +3,25 @@
 # This analysis is based on Linux shell commands.
 # Annotate genes with hg37/hg19:
 
-magma --annotate window=1,0.5 --snp-loc g1000_eur.bim --gene-loc Rev.NCBI37.3_noMHC.gene.loc.txt --out annotated_Sept.noMHC.genes
+magma --annotate window=1,0.5 --snp-loc g1000_eur.bim --gene-loc Rev.NCBI37.3_noMHC.gene.loc.txt --out MAGMA_analysis_final_01282026_annotation
 
 # Assign PGC3 p values to annotated genes:
 
-magma --bfile g1000_eur --pval PGC3_SCZ_wave3.european.autosome.public.v3.04082024.txt use=2,11 N=129124 --gene-annot annotated_Sept.noMHC.genes.genes.annot \
+magma --bfile g1000_eur --pval PGC3_SCZ_wave3.european.autosome.public.v3.04082024.txt use=2,11 N=129124 --gene-annot MAGMA_analysis_final_01282026_annotation.genes.annot \
 --out PGC3_genes_Sept_noMHC
 
 # Basic GSA uncorrected and corrected
 
-./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model correct=none --out Final_08292025_uncorr_noMHC
+magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA_DEG_01282026.sets --model correct=none --out Final_04202026_uncorr_noMHC
 
-./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --out Final_08292025_corrected_noMHC
+magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA_DEG_01282026.sets --out Final_04202026_corrected_noMHC
 
 # Conditional MAGMA 
 
-./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_synaptic_signaling --out Final_conditional_08292025.signaling.noMHC
+magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA_DEG_01282026.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_signaling --out Final_conditional_04202026.signaling.noMHC
 
-./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_postsynaptic --out Final_conditional_08282025.postsynaptic.noMHC
+magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA_DEG_01282026.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=DEG_Caudate,SynGO_postsynaptic,SynGO_presynaptic,SynGO_signaling --out Final_conditional_multivariate_04202026.noMHC
 
-./magma --gene-results PGC3_genes_Sept_noMHC.genes.raw --set-annot Gene_sets_MAGMA.sets --model analyse=file,Sets_for_conditional_08042025.signif condition=SynGO_presynaptic --out Final_conditional_08282025.presynaptic.noMHC
 
 #### LDSC analysis #####
 
