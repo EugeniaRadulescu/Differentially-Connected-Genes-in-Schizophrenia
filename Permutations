@@ -12,7 +12,7 @@ intraMod_con_refCTRL_modules_01092023 <- read_excel("Caudate/intraMod_con_refCTR
 
 ##### EXCHANGEABILITY CHECK: CTRL vs SCZ ######
 
-# Based on Gemini + this: https://library.virginia.edu/data/articles/testing-significance-permutation-based-methods
+# Based on: https://library.virginia.edu/data/articles/testing-significance-permutation-based-methods
 
 df1<-intramodular_conn_CTRL_and_SCZ # DLPFC
 df2<-intraMod_con_refCTRL_modules_12272022 # Hippocampus
@@ -254,94 +254,3 @@ names(my_df_all)<-c("C DLPFC","kIn DLPFC","kTot DLPFC","C Caudate","kIn Caudate"
 
 write.csv(my_df_all,file="Overlap_out_perm_IQR_all_regional_nutJust_consistent_02042026.csv")
 
-######## Additional, not needed, just check a more conservative boundary ########
-
-run_10000_permutations_final_R2 <- function(data_df, ctrl_col, scz_col, metric_name, region_name, n_perms = 10000) {
-  
-  # 1. RAW DATA CHECK (For your Results section)
-  raw_ctrl <- data_df[[ctrl_col]]
-  raw_scz  <- data_df[[scz_col]]
-  var_ratio <- var(raw_ctrl, na.rm=TRUE) / var(raw_scz, na.rm=TRUE)
-  
-  message("--- Processing: ", region_name, " | ", metric_name, " ---")
-  message("Pre-scaling Variance Ratio (CTRL/SCZ): ", round(var_ratio, 4))
-  
-  # 2. SCALING FOR EXCHANGEABILITY
-  # scale() returns a matrix, so we use as.numeric to keep it simple
-  ctrl_scaled <- as.numeric(scale(raw_ctrl))
-  scz_scaled  <- as.numeric(scale(raw_scz))
-  N_genes     <- length(ctrl_scaled)
-  
-  # 3. CALCULATE ORIGINAL DELTA (in Z-score units)
-  delta_orig <- abs(ctrl_scaled - scz_scaled)
-  
-  # 4. PERMUTATION LOOP
-  combined <- c(ctrl_scaled, scz_scaled)
-  all_permuted_deltas_list <- list()
-  
-  set.seed(1020) # For reproducibility
-  
-  for (i in 1:n_perms) {
-    shuffled <- sample(combined)
-    # Split into two groups of size N_genes
-    p_ctrl <- shuffled[1:N_genes]
-    p_scz  <- shuffled[(N_genes + 1):(2 * N_genes)]
-    
-    # Calculate permuted absolute difference
-    all_permuted_deltas_list[[i]] <- abs(p_ctrl - p_scz)
-  }
-  
-  all_flat <- unlist(all_permuted_deltas_list)
-  null_boundary_99 <- quantile(all_flat, 0.99)
-  
-  # 5. FINAL RESULTS
-  non_random_count <- sum(delta_orig > null_boundary_99)
-  non_random_percent <- (non_random_count / N_genes) * 100
-  
-  # 6. PLOTTING
-  plot_data <- data.frame(delta_orig = delta_orig)
-  boundary_text <- paste0("99% Null Boundary: ", format(null_boundary_99, digits = 4))
-  count_text <- paste0("Non-Random: ", non_random_count, " genes (", round(non_random_percent, 2), "%)")
-  
-  x_limit <- max(c(max(delta_orig), null_boundary_99)) * 1.05
-  
-  p <- ggplot(plot_data, aes(x = delta_orig)) +
-    geom_histogram(aes(y = after_stat(density)), bins = 100, fill = "royalblue", alpha = 0.7, color = "black") +
-    geom_vline(xintercept = null_boundary_95, linetype = "dashed", color = "red", linewidth = 1) +
-    labs(
-      title = paste0(region_name, " - Scaled ", metric_name),
-      subtitle = paste(count_text, "\nVariance Ratio: ", round(var_ratio, 2)),
-      x = "Absolute Difference (Z-score units)",
-      y = "Density"
-    ) +
-    coord_cartesian(xlim = c(0, x_limit)) +
-    theme_minimal() +
-    theme(plot.title = element_text(face = "bold"))
-  
-  print(p)
-  
-  # Save the file with a clear name
-  filename <- paste0(region_name, "_", metric_name, "_scaled_10000_perms_99perc.png")
-  ggsave(filename, plot = p, width = 8, height = 5)
-  
-  return(list(
-    region = region_name,
-    metric = metric_name,
-    variance_ratio = var_ratio,
-    null_boundary = null_boundary_95,
-    count = non_random_count,
-    percent = non_random_percent
-  ))
-}
-
-res_C_DLPFC   <- run_10000_permutations_final_R2(df1, 'C_CTRL', 'C_SCZ', 'C', 'DLPFC')
-res_kIn_DLPFC <- run_10000_permutations_final_R2(df1, 'kIn_CTRL', 'kIn_SCZ', 'kIn', 'DLPFC')
-res_kTot_DLPFC<- run_10000_permutations_final_R2(df1, 'kTotal_CTRL', 'kTotal_SCZ', 'kTotal', 'DLPFC')
-
-res_C_Hippo   <- run_10000_permutations_final_R2(df2, 'C_CTRL', 'C_SCZ', 'C', 'Hippo')
-res_kIn_Hippo <- run_10000_permutations_final_R2(df2, 'kIn_CTRL', 'kIn_SCZ', 'kIn', 'Hippo')
-res_kTot_Hippo<- run_10000_permutations_final_R2(df2, 'kTotal_CTRL', 'kTotal_SCZ', 'kTotal', 'Hippo')
-
-res_C_Cau   <- run_10000_permutations_final_R2(df3, 'C_CTRL', 'C_SCZ', 'C', 'Caudate')
-res_kIn_Cau <- run_10000_permutations_final_R2(df3, 'kIn_CTRL', 'kIn_SCZ', 'kIn', 'Caudate')
-res_kTot_Cau<- run_10000_permutations_final_R2(df3, 'kTotal_CTRL', 'kTotal_SCZ', 'kTotal', 'Caudate')
