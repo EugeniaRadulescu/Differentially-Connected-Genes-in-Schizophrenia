@@ -17,18 +17,20 @@ sym = getBM(attributes = c("ensembl_gene_id","hgnc_symbol","gene_biotype"),
 
 # --- 2. Define Global Paths and Data ---
 
-# Base path for input data
-base_input_path <- "/home/edata/.../.../"
+# Base path for input data; run from the directory for enrichment analysis with GeneOverlap
+
+base_input_path <- "/home/.../.../Enrichment/"
 
 # Load common gene sets for testing enrichment
 message("Loading common gene sets for enrichment testing...")
-# Assuming these RData files contain:
-#   - Out_clCoeff_spec
-#   - Out_kIn_modSize_spec
-#   - ov (from which Shared_by_clCoef_kIn is derived)
 
-load(file.path(base_input_path, "Final_set_outliers_for_enrichment_07032024.RData"))
-load(file.path(base_input_path, "Differential_gene_expression_3regions_07112025.RData"))
+# Comment files not needed for post-GWAS
+
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Regionally_specific_DEG_notDCG_01222026.RData")
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Outliers_for_absDiff_03062025.RData")
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Background_for_clProfiler_regSpec_vs_regConsistent_01232026.RData")
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Final_set_outliers_for_enrichment_07032024.RData")
+
 SynGO<-read_excel(file.path(base_input_path,"SynGO_final_07112025.xlsx"))
 
 message("Creating final sets shared by all regions...")
@@ -74,7 +76,6 @@ SynGO <- process_excel_data(SynGO, "Set", "Symbol")
 library(dplyr)
 
 #' Process Gene Data
-#'
 #' This function takes a single-column data frame or vector of gene symbols and
 #' joins it with a symbol mapping data frame. It then extracts Ensembl gene
 #' IDs and a deduplicated list of HGNC symbols.
