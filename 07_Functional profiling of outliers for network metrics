@@ -1,38 +1,18 @@
 
 ######## Gene ontology analysis- GO:BP for DCG and DEG #########
 
+# For Fig.4A: this is the cnetplot, based on the three sets of priority DCG, on the background of genes common to all regions (N=18,874)
+
 load("/home/edata/.../Differential_gene_expression_3regions_07112025.RData")
 load("/home/edata/.../Final_set_outliers_for_enrichment_07032024.RData")
 
 collectGarbage()
 
-mydf<-as.data.frame(c(Out_clCoeff_spec,Out_kIn_modSize_spec,intersect(Out_clCoeff,Out_kIn_modSize),
-                    DEGs$DLPFC$Symbol,DEGs$Hippo$Symbol,
-                    DEGs$Caudate$Symbol))
-
-group_names <- c("C", "kIn", "C-kIn shared","DEG DLPFC","DEG Hippo","DEG-Caudate")
-group_sizes <- c(length(Out_clCoeff_spec), length(Out_kIn_modSize_spec), length(intersect(Out_clCoeff,Out_kIn_modSize)),
-                 length(DEGs$DLPFC$Symbol),length(DEGs$Hippo$Symbol),
-                 length(DEGs$Caudate$Symbol))
-
-group_names
-group_sizes
-
-Group <- rep(group_names, group_sizes)
-
-# Check the result
-print(table(Group))
-
-mydf$Group<-Group
-names(mydf)<-c("Symbol","Group")
-
-# For figure 4:
-
 mydf1<-as.data.frame(c(Out_clCoeff_spec,Out_kIn_modSize_spec,intersect(Out_clCoeff,Out_kIn_modSize)))
-                      
+
 group_names1 <- c("C", "kIn", "C-kIn shared")
 group_sizes1 <- c(length(Out_clCoeff_spec), length(Out_kIn_modSize_spec), length(intersect(Out_clCoeff,Out_kIn_modSize)))
-                 
+
 Group <- rep(group_names1, group_sizes1)
 group_names1
 group_sizes1
@@ -44,16 +24,6 @@ Background<-ov_All_regions$a5
 
 library(clusterProfiler)
 
-formula_res <- compareCluster(Symbol~Group, data=mydf, fun="enrichGO",OrgDb = org.Hs.eg.db,
-                              keyType = "SYMBOL",ont = "BP",
-                              pvalueCutoff = 0.05,
-                              minGSSize    = 10,
-                              maxGSSize    = 500,
-                              pAdjustMethod = "bonferroni",
-                              universe=Background,
-                              qvalueCutoff = 0.05)
-
-# For cnetplot, use only C and kIn, so make sure you un-comment variables that you do not need
 
 formula_res1 <- compareCluster(Symbol~Group, data=mydf1, fun="enrichGO",OrgDb = org.Hs.eg.db,
                                keyType = "SYMBOL",ont = "BP",
@@ -65,48 +35,16 @@ formula_res1 <- compareCluster(Symbol~Group, data=mydf1, fun="enrichGO",OrgDb = 
                                qvalueCutoff = 0.05)
 
 
-
-formula_test<-formula_res
-
-# For cnetplot:
-
 formula_test1<-formula_res1
-
-formula_final<-clusterProfiler::simplify(formula_test,cutoff = 0.7,
-                                         by = "p.adjust",
-                                         select_fun = min,
-                                         measure = "Wang",
-                                         semData = NULL)
-
-# For cnetplot:
-library(GOSemSim)
 
 formula_final1<-clusterProfiler::simplify(formula_test1,cutoff = 0.6,
                                           by = "p.adjust",
                                           select_fun = min,
                                           measure = "Wang",
                                           semData = NULL)
-formula_final1<-clusterProfiler::filter(formula_final1,Count>=10)
 
-
-head(formula_final)
 head(formula_final1)
 
-# Dotplot
-pp <- enrichplot::dotplot(formula_final, x="Parameters",showCategory = 5,label_format = 120) + facet_grid(. ~ Group) +
-  aes(x=as.factor(Group)) + xlab("Parameters") +
-  scale_fill_gradient(low="red",high="grey80",
-                       guide=guide_colorbar(reverse=TRUE, order=1)) +
-  guides(size = guide_legend(override.aes=list(shape=1))) +
-  theme(panel.grid.major.y = element_line(linetype='dotted', color='#808080'),
-        panel.grid.major.x = element_blank())
-
-
-pp + theme(axis.text.x = element_text(colour="black",face="bold",size=10,angle = 60,vjust = 1, hjust=1),
-           axis.text.y = element_text(colour="black",face="bold",size=10),
-           strip.text = element_text(size = 11,face="bold",colour = "darkred"))
-
-pp
 
 # Cnetplot
 colors_cnetplot<-c("purple","grey80","pink") # For cnetplot use C, kIn and C-kIn shared
@@ -135,60 +73,110 @@ cols<-c(rep("darkred",12),rep("black",91))
 size<-c(rep(2.5,12),rep(2,91))
 
 p3 <- p2 + ggrepel::geom_label_repel(aes(x = p2$data$x, y = p2$data$y,
-                                        label = label),
-                                    colour=cols,size=size,
-                                    fontface="bold",
-                                    hjust = 0.5,
-                                    force = 2,
-                                    max.overlaps = 20,
-                                    force_pull = 0,
-                                    box.padding = 0.5,
-                                    min.segment.length = 1,
-                                    position = position_nudge_repel(x = 0.3, y = 0.3)) 
-
-p4 <- p2 + ggrepel::geom_text_repel(aes(x = p2$data$x, y = p2$data$y,
                                          label = label),
                                      colour=cols,size=size,
                                      fontface="bold",
                                      hjust = 0.5,
-                                     force = 1,
+                                     force = 2,
                                      max.overlaps = 20,
                                      force_pull = 0,
                                      box.padding = 0.5,
                                      min.segment.length = 1,
                                      position = position_nudge_repel(x = 0.3, y = 0.3)) 
 
-# hjust<-c(rep(0,2),rep(1,2),rep(0.5,63))
-
+p4 <- p2 + ggrepel::geom_text_repel(aes(x = p2$data$x, y = p2$data$y,
+                                        label = label),
+                                    colour=cols,size=size,
+                                    fontface="bold",
+                                    hjust = 0.5,
+                                    force = 1,
+                                    max.overlaps = 20,
+                                    force_pull = 0,
+                                    box.padding = 0.5,
+                                    min.segment.length = 1,
+                                    position = position_nudge_repel(x = 0.3, y = 0.3)) 
 p3 
 p4
 options(ggrepel.max.overlaps = Inf)
 
-library(openxlsx)
-
-wb <- createWorkbook()
-addWorksheet(wb, "Outliers_common_and_spec")
-writeData(wb, "Outliers_common_and_spec", x = mydf)
 
 ##### Enrichment in gene sets of interest ######
 
+# --- 1. Load Libraries ---
+library(readxl)        # For reading Excel files
+library(data.table)    # For setDT (fast data frame operations)
+library(GeneOverlap)   # For gene set enrichment analysis
+library(RColorBrewer)  # For color palettes in heatmaps
+library(circlize)      # Dependency for ComplexHeatmap (colorRamp2)
+library(ComplexHeatmap) # For generating professional heatmaps
+library(tibble)        # For rownames_to_column
+library(openxlsx)      # For saving data to Excel
+
+
+
+# --- 2. Define Global Paths and Data ---
+
+library(GeneOverlap)
+# Base path for input data
+base_input_path <- "/home/.../.../Enrichment/"
+
+# Load common gene sets for testing enrichment
+message("Loading common gene sets for enrichment testing...")
+load(file.path(base_input_path, "Regionally_specific_DCG_01222026.RData"))
+
+load(file.path(base_input_path,Regionally_specific_DEG_notDCG_01222026.RData"))
+load(file.path(base_input_path,Outliers_for_absDiff_03062025.RData"))
+load(file.path(base_input_path,Background_for_clProfiler_regSpec_vs_regConsistent_01232026.RData"))
+load(file.path(base_input_path,Final_set_outliers_for_enrichment_07032024.RData"))
+
+# For overlap of DCG, DEG with sets of interest; this set is also source for Fig.4B
+
+gene_sets_to_test <- list(
+  "C" = ov$a1,
+  "KIn" = ov$a3,
+  "C-KIn_shared" = c(ov$a5,ov$a2), 
+  "DEGs DLPFC" = DEG_DLPFC_not_DCG_final,
+  "DEGs Hippo" = DEG_Hippo_not_DCG_final,
+  "DEGs Caudate"=DEG_Caudate_not_DCG_final)
+
+# For regionally specific DCG
+
+Ov=calculate.overlap(list(C_regOut,kIn_regOut,kTot_regOut))
+
+gene_sets_to_test <- list(
+  "DLPFC C" = Out_C_regionally_spec$C_DLPFC,
+  "DLPFC kIn" = Out_kIn_regionally_spec$kIn_DLPFC,
+  "DLPFC kTot" = Out_kTotal_regionally_spec$kTotal_DLPFC,
+  "Hippo C" = Out_C_regionally_spec$C_Hippo,
+  "Hippo kIn" = Out_kIn_regionally_spec$kIn_Hippo,
+  "Hippo kTot" = Out_kTotal_regionally_spec$kTotal_Hippo,
+  "Caudate C" = Out_C_regionally_spec$C_Caudate,
+  "Caudate kIn" = Out_kIn_regionally_spec$kIn_Caudate,
+  "Caudate kTot" = Out_kTotal_regionally_spec$kTotal_Caudate,
+  "C spec" = Ov$a1,
+  "kIn spec" = Ov$a3,
+  "C kIn shared" = intersect(C_regOut,kIn_regOut))
+
+message("Gene sets to test loaded. Counts:")
+print(sapply(gene_sets_to_test, length))
+
+# Preparation of Gene Sets  Enrichment Analysis 
 # Includes PGC3, SynGO, Druggable Genome, and TWAS genes
-# Define Global Paths 
-base_path <- "/home/edata/.../.../"
+
+# --- 1. Load Libraries ---
+
+# --- 2. Define Global Paths ---
+base_path <- "/home/.../Enrichment/"
 
 # --- 3. Load Common Background Genes and Outlier Sets ---
 message("Loading common outlier and background gene sets...")
 
-# Assuming 'ov_All_regions' is loaded from this file and contains 'a5' (intersection of all regions).
-# Also assuming 'Out_clCoeff' is loaded for later TWAS intersection.
-
-load(file.path(base_path, "Final_set_outliers_for_enrichment_07032024.RData"))
-Background_genes <- ov_All_regions$a5
+Background_genes<-Background
 message(paste("Total background genes loaded:", length(Background_genes)))
 
-# Helper Function for Gene List Processing 
-# This function simplifies loading, cleaning, and intersecting gene lists
+# --- 4. Helper Function for Gene List Processing ---
 
+# This function simplifies loading, cleaning, and intersecting gene lists
 process_gene_list <- function(
     data_frame,
     gene_column_name,
@@ -213,13 +201,13 @@ process_gene_list <- function(
   return(gene_list_intersected)
 }
 
-# Process PGC3 Prioritized Genes 
+# --- 5. Process PGC3 Prioritized Genes ---
 message("\nProcessing PGC3 Prioritized Genes...")
 pgc3_raw_data <- read.csv(file.path(base_path, "PGC3_Prioritized_genes.txt"), sep = "")
 PGC3_prioritized_genes <- process_gene_list(pgc3_raw_data, "PGC3_prioritized", Background_genes)
 message(paste("PGC3 prioritized genes after background intersection:", length(PGC3_prioritized_genes)))
 
-# Process SynGO Ontologies 
+# --- 6. Process SynGO Ontologies ---
 message("\nProcessing SynGO Ontologies...")
 syngo_raw_data <- read.csv(file.path(base_path, "SynGO_by_ontologies_05022024.csv"))
 
@@ -251,6 +239,7 @@ print(sapply(SynGO_gene_lists, length))
 
 # Prepare SynGO data for MAGMA (or other tools requiring a specific format)
 # This section constructs a data frame with gene symbols and their corresponding SynGO set.
+
 message("\nPreparing SynGO data for MAGMA format and saving to Excel...")
 SynGO_combined_df <- do.call(rbind, lapply(names(SynGO_gene_lists), function(set_name) {
   data.frame(Symbol = SynGO_gene_lists[[set_name]], Set = set_name)
@@ -264,7 +253,7 @@ writeData(wb_syngo, "SynGO", x = SynGO_combined_df)
 saveWorkbook(wb_syngo, file.path(base_path, "SynGO_final_07112025.xlsx"), overwrite = TRUE)
 message("SynGO_final_07112025.xlsx saved.")
 
-# Process Druggable Genome Categories 
+# --- 7. Process Druggable Genome Categories ---
 message("\nProcessing Druggable Genome Categories...")
 druggable_raw_data <- read.csv(file.path(base_path, "Druggable_by_levelsDev_05022024.csv"))
 
@@ -296,9 +285,12 @@ load(file.path(base_path, "TWAS_results.tar/tt_objects.Rdata")) # Assuming ttSig
 
 TWAS_DLPFC_genes_raw <- ttSig_bonf$DLPFC$genesymbol
 TWAS_DLPFC_genes <- TWAS_DLPFC_genes_raw[!duplicated(TWAS_DLPFC_genes_raw)]
+
+# If TWAS_DLPFC_genes_raw could contain problematic first elements, use a more robust filter:
 TWAS_DLPFC_genes <- TWAS_DLPFC_genes[!is.na(TWAS_DLPFC_genes) & TWAS_DLPFC_genes != ""]
 TWAS_DLPFC_genes <- sort(TWAS_DLPFC_genes)
 message(paste("DLPFC TWAS genes (Bonferroni < 0.05):", length(TWAS_DLPFC_genes)))
+
 
 # Process HIPPO TWAS genes
 TWAS_Hippo_genes_raw <- ttSig_bonf$HIPPO$genesymbol
@@ -316,10 +308,10 @@ TWAS_Caudate_genes <- TWAS_Caudate_genes[!is.na(TWAS_Caudate_genes) & TWAS_Cauda
 TWAS_Caudate_genes <- sort(TWAS_Caudate_genes)
 message(paste("Caudate TWAS genes (Bonferroni < 0.05):", length(TWAS_Caudate_genes)))
 
-# Print TWAS Caudate genes (for verification, as in original)
-# print(TWAS_Caudate_genes) # Uncomment if you want to see the list
+# Print TWAS Caudate genes 
 
-# Identify Common TWAS Genes Across All 3 Regions 
+
+# --- 9. Identify Common TWAS Genes Across All 3 Regions ---
 message("\nIdentifying common TWAS genes across DLPFC, Hippocampus, and Caudate...")
 twas_venn_list <- list(
   "TWAS_DLPFC_genes" = TWAS_DLPFC_genes,
@@ -327,17 +319,27 @@ twas_venn_list <- list(
   "TWAS_Caudate_genes" = TWAS_Caudate_genes
 )
 
+# Draw the Venn diagram here if desired:
+
 venn_twas <- venn.diagram(twas_venn_list, filename = NULL,
                           fill = c("skyblue", "lightpink", "lightgreen"), alpha = 0.5, main = "Common TWAS Genes")
 plot.new()
 grid.draw(venn_twas)
 
+overlap_twas <- calculate.overlap(twas_venn_list)
+TWAS_common_genes <- overlap_twas$a5 # 'a5' is the intersection of all three sets
+message(paste("Number of common TWAS genes across 3 regions:", length(TWAS_common_genes)))
+
 # Final intersection of common TWAS genes with the overall background
 TWAS_common_genes_final <- intersect(TWAS_common_genes, Background_genes)
 message(paste("Common TWAS genes after intersecting with overall Background:", length(TWAS_common_genes_final)))
 
-# Save TWAS Genes 
+# --- 10. Save TWAS Genes ---
 
+# Saving original TWAS data frames (TWAS_DLPFC, etc.) as in your original script.
+# If these were not explicitly loaded, you might need to create them.
+# The original script seems to imply these are direct results from `ttSig_bonf$DLPFC` etc.
+# Renaming for clarity if they are the full data frames.
 TWAS_DLPFC_df <- ttSig_bonf$DLPFC # Assuming this is the full data frame for DLPFC TWAS
 TWAS_Hippo_df <- ttSig_bonf$HIPPO # Assuming this is the full data frame for HIPPO TWAS
 TWAS_Caudate_df <- TWAS_Caudate_bonf_filtered # This is the full filtered data for Caudate
@@ -352,49 +354,6 @@ message("TWAS_genes_DLPFC_HIPPO_Caudate.RData saved.")
 message("\nScript execution complete. All gene sets prepared.")
 
 
-#### Calculate the enrichment ######
-
-# Load Libraries 
-library(readxl)        # For reading Excel files
-library(data.table)    # For setDT (fast data frame operations)
-library(GeneOverlap)   # For gene set enrichment analysis
-library(RColorBrewer)  # For color palettes in heatmaps
-library(circlize)      # Dependency for ComplexHeatmap (colorRamp2)
-library(ComplexHeatmap) # For generating professional heatmaps
-library(tibble)        # For rownames_to_column
-library(openxlsx)      # For saving data to Excel
-
-
-# Define Global Paths and Data 
-
-# Base path for input data
-base_input_path <- "/home/edata/.../.../"
-
-# Load common gene sets for testing enrichment
-message("Loading common gene sets for enrichment testing...")
-
-load(file.path(base_input_path, "Final_set_outliers_for_enrichment_07032024.RData"))
-load(file.path(base_input_path, "Differential_gene_expression_3regions_07112025.RData"))
-
-message("Creating final sets shared by all regions...")
-
-Shared_by_clCoef_kIn <- c(ov[[1]], ov[[2]])
-
-DEGs_shared<-calculate.overlap(x=list(DEGs[[1]]$Symbol,DEGs[[2]]$Symbol,DEGs[[3]]$Symbol)) 
-DEGs_shared_final<-DEGs_shared$a5
-
-# Define the gene sets to be tested for enrichment (common across analyses)
-gene_sets_to_test <- list(
-  "C" = Out_clCoeff_spec,
-  "KIn" = Out_kIn_modSize_spec,
-  "C-KIn_shared" = Shared_by_clCoef_kIn, # Uncomment if you want to include this
-  "DEGs DLPFC" = DEGs[[1]]$Symbol,
-  "DEGs Hippo" = DEGs[[2]]$Symbol,
-  "DEGs Caudate"=DEGs[[3]]$Symbol)
-
-message("Gene sets to test loaded. Counts:")
-print(sapply(gene_sets_to_test, length))
-
 toTest<-list("PGC3 prioritized"=PGC3_prioritized_genes,"TWAS common genes"=TWAS_common_genes,"SynGO metabolism"=SynGO_BP_metabolism,"SynGO presynaptic"=SynGO_BP_presynaptic_process,
              "SynGO postsynaptic"=SynGO_BP_postsynaptic_process,"SynGO synaptic signaling"=SynGO_BP_synaptic_signaling,
              "Druggable genome Tbio"=Druggable_gene_lists$Druggable_genome_Tbio,"Druggable genome Tchem"=Druggable_gene_lists$Druggable_genome_Tchem,
@@ -404,10 +363,10 @@ message("Gene sets to be tested loaded. Counts:")
 print(sapply(toTest, length))
 collectGarbage()
 
-# Helper Functions 
+# --- 3. Helper Functions ---
 
 # Recursive function to remove specified name from all levels of a list
-# Original function, adapted slightly for clarity.
+
 stripname <- function(x, name_to_strip) {
   if (!is.list(x)) {
     return(x)
@@ -473,8 +432,9 @@ perform_enrichment_analysis <- function(
             show_row_dend = FALSE,
             cluster_columns = FALSE,
             column_title = paste0("Enrichment of DCG and DEG \nin ", title_suffix, "gene sets of interest"),
-            row_title_side = "right",
-            column_title_gp = gpar(col = "black", fontsize = 16, fontface = "bold"),
+            column_title_side = "top",
+            heatmap_width = unit(12, "cm"),
+            column_title_gp = gpar(col = "black", fontsize = 14, fontface = "bold"),
             column_names_rot = 60,
             column_names_gp = gpar(fontsize = 12, fontface = "bold", col = "black"),
             row_names_gp = gpar(fontsize = 12, fontface = "bold", col = "black"),
@@ -497,6 +457,7 @@ perform_enrichment_analysis <- function(
   colnames(adj_pval_matrix) <- colnames(pval_matrix)
   rownames(adj_pval_matrix) <- rownames(pval_matrix)
   adj_pvalTable <- as.data.frame(adj_pval_matrix)
+  
   
   # Add row names as a column
   pvalTable <- rownames_to_column(pvalTable, var = "Gene_sets")
@@ -555,17 +516,14 @@ results_enrichment <- perform_enrichment_analysis(
 # Save results
 save_enrichment_results(
   results_enrichment,
-  "SupplTable_for_enrichments_instead_of_heatmap_6_08272025.xlsx",
+  "SupplTable_for_enrichments_regionally_spec_outliers.xlsx",
   "Enrichments_final"
 )
 
-save(results_enrichment,file="Enrichments_final_08272025.RData")
+save(results_enrichment,file="Enrichments_final_regionally_spec_out_01232026.RData")
+save(gene_sets_to_test,file="Gene_list_DCG_orig_regionally_spec_01232026.RData")
 
 collectGarbage()
-
-saveWorkbook(wb, "Outliers_common_and_spec_final_07262024.xlsx", overwrite = TRUE)
-
-
 
 
 
