@@ -1,5 +1,6 @@
 
-###### For an earlier version with only two sets of organoids #########
+##### Analyze the 4 sets of organoids 04092026 ###########
+
 
 rm(list = ls())  # Clear the environment
 options(warn=-1) # Turn off warning message globally
@@ -7,245 +8,6 @@ library(monocle3) # Load Monocle
 
 library(Seurat)
 library(SeuratWrappers)
-library(monocle3)
-
-# COs
-
-load("~/.../SZBDMulti-Seq/Organoids_DLPFC_reduced_06302025.RData")
-
-# hOLS
-GSE115011_marton_all_cells.csv <- read.csv("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/GSE115011_marton_all_cells.csv.gz")
-GSE<-GSE115011_marton_all_cells.csv
-
-GSE<-GSE115011_marton_all_cells.csv[!duplicated(GSE$Gene.name),]
-rownames(GSE)<-NULL
-GSE<-column_to_rownames(GSE,var="Gene.name")
-
-library(GEOquery)
-meta<-getGEO("GSE115011",GSEMatrix = FALSE)
-hOLs_Marton_metadata <- read.csv("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/hOLs_Marton_metadata.csv")
-
-hOLs <- CreateSeuratObject(counts = GSE, project = "hOLs", min.cells = 3, min.features = 200)
-hOLs
-hOLs[["percent.mt"]] <- PercentageFeatureSet(hOLs, pattern = "^MT-")
-VlnPlot(hOLs, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
-
-hOLs <- NormalizeData(hOLs)
-
-# Convert seurat objects to cds for Monocle
-
-cds_COs <- as.cell_data_set(Organoids_DLPFC_red)
-cds_hOLs <- as.cell_data_set(hOLs)
-
-collectGarbage()
-
-table(pData(cds_COs)$MajorCellType3) # Example
-
-# Pass TRUE if you want to see progress output on some of Monocle 3's operations
-DelayedArray:::set_verbose_block_processing(TRUE)
-
-# Passing a higher value will make some computations faster but use more memory. Adjust with caution!
-options(DelayedArray.block.size=1000e6)
-
-rowData(cds_hOLs)$gene_name <- rownames(cds_hOLs)
-rowData(cds_hOLs)$gene_short_name <- rowData(cds_hOLs)$gene_name
-rowData(cds_COs)$gene_name <- rownames(cds_COs)
-rowData(cds_COs)$gene_short_name <- rowData(cds_COs)$gene_name
-
-cds_hOLs <- preprocess_cds(cds_hOLs, num_dim = 50)
-cds_COs <- preprocess_cds(cds_COs, num_dim = 50)
-
-
-p1<-plot_pc_variance_explained(cds_hOLs)
-p2<-plot_pc_variance_explained(cds_COs)
-p1+p2
-
-# Annotate with SingleR using Darmanis data:
-
-library(SingleR)
-library(scRNAseq)
-library(scuttle)
-
-sce<-DarmanisBrainData(legacy=TRUE)
-sce<-sce[,colSums(counts(sce)) > 0]
-sce<-logNormCounts(sce)
-
-pred.hOLs<-SingleR(test=cds_hOLs,ref=sce,assay.type.test=1,labels=sce$cell.type)
-pred.COs<-SingleR(test=cds_COs,ref=sce,assay.type.test=1,labels=sce$cell.type)
-
-# Actual annotation:
-
-pData(cds_hOLs)$cell_type2<-pred.hOLs$labels
-table(pData(cds_hOLs)$cell_type2)
-
-pData(cds_COs)$cell_type2<-pred.COs$labels
-table(pData(cds_COs)$cell_type2)
-
-cds_hOLs <- reduce_dimension(cds_hOLs,reduction_method = "UMAP")
-p3<-plot_cells(cds_hOLs, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
-
-cds_COs <- reduce_dimension(cds_COs,reduction_method = "UMAP")
-p4<-plot_cells(cds_COs, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
-
-p3+p4
-
-# Only for COs, where you have CTRL and SCZ donors, you need to align CTRL and SCZ data:
-
-plot_cells(cds_COs, color_cells_by="Dx", label_cell_groups=FALSE,cell_size=0.45,cell_stroke=0.2)
-cds_COs <- align_cds(cds_COs, num_dim = 50, alignment_group = "Dx") # Save the aligned COs
-
-cds_hOLs <- reduce_dimension(cds_hOLs)
-cds_COs <- reduce_dimension(cds_COs)
-
-# plot_cells(cds_COs, color_cells_by="Dx", label_cell_groups=FALSE,cell_size=0.45,cell_stroke=0.3)
-
-cds_hOLs <- cluster_cells(cds_hOLs, resolution=1e-1)
-p5<-plot_cells(cds_hOLs,group_label_size = 5,cell_size=0.6,cell_stroke=0.2)
-
-cds_COs <- cluster_cells(cds_COs, resolution=1e-5)
-p6<-plot_cells(cds_COs,group_label_size = 5,cell_size=0.45,cell_stroke=0.2)
-
-p5+p6
-
-plot_cells(cds_hOLs, color_cells_by="partition", group_cells_by="partition",group_label_size = 5)
-plot_cells(cds_COs, color_cells_by="partition", group_cells_by="partition",group_label_size = 5)
-
-p7<-plot_cells(cds_hOLs, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
-p8<-plot_cells(cds_COs, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
-p7+p8
-
-cds_hOLs <- learn_graph(cds_hOLs) # Save the cds_hOLs with learned graph
-cds_COs <- learn_graph(cds_COs) # Save the cds_COs with learned graph
-
-table(pData(cds_hOLs)$cell_type2)
-table(pData(cds_COs)$cell_type2)
-
-# This is a good solution:
-
-get_earliest_principal_node <- function(cds_hOLs, time_bin='oligodendrocytes'){
-  cell_ids <- which(colData(cds_hOLs)[, "cell_type2"] == time_bin)
-  
-  closest_vertex <-
-    cds_hOLs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
-  closest_vertex <- as.matrix(closest_vertex[colnames(cds_hOLs), ])
-  root_pr_nodes <-
-    igraph::V(principal_graph(cds_hOLs)[["UMAP"]])$name[as.numeric(names
-                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
-  
-  root_pr_nodes
-}
-
-get_earliest_principal_node <- function(cds_COs, time_bin='fetal_replicating'){
-  cell_ids <- which(colData(cds_COs)[, "cell_type2"] == time_bin)
-  
-  closest_vertex <-
-    cds_COs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
-  closest_vertex <- as.matrix(closest_vertex[colnames(cds_COs), ])
-  root_pr_nodes <-
-    igraph::V(principal_graph(cds_COs)[["UMAP"]])$name[as.numeric(names
-                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
-  
-  root_pr_nodes
-}
-
-cds_hOLs <- order_cells(cds_hOLs, root_pr_nodes=get_earliest_principal_node(cds_hOLs))
-cds_COs <- order_cells(cds_COs, root_pr_nodes=get_earliest_principal_node(cds_COs))
-
-# Plot trajectories for each cell type that is starting point (earliest principal node):
-plot_cells(cds_COs_fetal_Q,
-           color_cells_by = "pseudotime",
-           label_cell_groups=FALSE,
-           label_leaves=FALSE,
-           label_branch_points=FALSE,
-           cell_size=0.8,cell_stroke=0.2,
-           graph_label_size=3)
-
-# After creating mst, select cells of interest:
-
-cds_hOLs_OPC <- choose_cells(cds_hOLs)
-cds_hOLs_oligodendrocytes <- choose_cells(cds_hOLs)
-cds_COs_astrocytes <- choose_cells(cds_COs)
-cds_COs_neurons <- choose_cells(cds_COs)
-cds_COs_fetal_Q <- choose_cells(cds_COs)
-cds_COs_fetal_Repl <- choose_cells(cds_COs)
-
-# Apply Moran's statistics for each trajectory, for example:
-pr_graph_test_res <- graph_test(cds_COs_neurons, neighbor_graph="knn", cores=8)
-
-print(dplyr::add_rownames(pr_graph_test_res) %>%
-        dplyr::arrange(plyr::desc(morans_test_statistic), plyr::desc(-q_value)) %>% head(200),n=200)
-
-pr_graph_test_res[fData(cds_hOLs_oligodendrocytes)$gene_short_name %in% c("OLIG1","OLIG2","MAG","PLP1"),] # Check genes of interest in cell trajectories
-pr_graph_test_res[fData(cds_COs_astrocytes)$gene_short_name %in% c("GFAP"),]
-pr_graph_test_res[fData(cds_COs_neurons)$gene_short_name %in% c("GRM3","KCNH1","AKT3"),] 
-
-# Select genes with siggnificant Moran's statistics for two quantiles:
-
-pr_deg_ids_OPC_95 <- row.names(subset(pr_graph_test_res, 
-                                   morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_OPC_75 <- row.names(subset(pr_graph_test_res, 
-                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_Oli_95 <- row.names(subset(pr_graph_test_res, 
-                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_Oli_75 <- row.names(subset(pr_graph_test_res, 
-                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_Astro_95 <- row.names(subset(pr_graph_test_res, 
-                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_Astro_75 <- row.names(subset(pr_graph_test_res, 
-                                      morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
-
-pr_deg_ids_neurons_95 <- row.names(subset(pr_graph_test_res, 
-                                        morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_neurons_75 <- row.names(subset(pr_graph_test_res, 
-                                        morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
-
-pr_deg_ids_fetal_Q_95 <- row.names(subset(pr_graph_test_res, 
-                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_fetal_Q_75 <- row.names(subset(pr_graph_test_res, 
-                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
-
-pr_deg_ids_fetal_Repl_95 <- row.names(subset(pr_graph_test_res, # Same as astrocytes, no need of it.
-                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.95,na.rm=TRUE) & q_value < 0.05))
-pr_deg_ids_fetal_Repl_75 <- row.names(subset(pr_graph_test_res, 
-                                          morans_I > quantile(pr_graph_test_res$morans_I, probs = 0.75,na.rm=TRUE) & q_value < 0.05))
-
-
-pr_deg_ids_Oli_hOLs_95<-pr_deg_ids_Oli_95 # Rename
-pr_deg_ids_Oli_hOLs_75<-pr_deg_ids_Oli_75
-
-pr_deg_ids_OPC_hOLs_95<-pr_deg_ids_OPC_95
-pr_deg_ids_OPC_hOLs_75<-pr_deg_ids_OPC_75
-
-pr_deg_ids_Astro_COs_95<-pr_deg_ids_Astro_95
-pr_deg_ids_Astro_COs_75<-pr_deg_ids_Astro_75
-
-pr_deg_ids_neurons_COs_95<-pr_deg_ids_neurons_95
-pr_deg_ids_neurons_COs_75<-pr_deg_ids_neurons_75
-
-pr_deg_ids_fetal_Q_COs_95<-pr_deg_ids_fetal_Q_95
-pr_deg_ids_fetal_Q_COs_75<-pr_deg_ids_fetal_Q_75
-
-save.image("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/Monocle_COs_hOLs_final_07172024.RData")
-
-load("~/data-symlink/Data_storage_from_Single_cell_Apr2025/From_Monocle_07162025/Monocle_COs_hOLs_final_07172024.RData")
-
-
-Gene_sets_from_trajectory_75<-list(pr_deg_ids_Astro_COs_75=pr_deg_ids_Astro_COs_75,
-                                pr_deg_ids_fetal_Q_COs_75=pr_deg_ids_fetal_Q_COs_75,
-                                pr_deg_ids_neurons_COs_75=pr_deg_ids_neurons_COs_75,
-                                pr_deg_ids_Oli_hOLs_75=pr_deg_ids_Oli_hOLs_75,
-                                pr_deg_ids_OPC_hOLs_75=pr_deg_ids_OPC_hOLs_75)
-
-names(Gene_sets_from_trajectory_75)<-c("Astrocytes COs","Fetal quiescent COs",
-                                    "Neurons COs","Oligodendrocytes hOLs","OPC hOLs")
-
-
-
-save(Gene_sets_from_trajectory_95,Gene_sets_from_trajectory_75,file="Gene_sets_from_trajectory.RData")
-
-
-##### Analyze the 4 sets of organoids 04092026 ###########
-
 library(monocle3)
 
 load("~/Your_directory/Organoids_01202026.RData")
@@ -265,11 +27,6 @@ cds_hippo <- reduce_dimension(cds_hippo,reduction_method = "UMAP")
 p6<-plot_cells(cds_hippo, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
 
 p5 + p6
-
-#### Only for COs, if you use the original organoids file
-# plot_cells(cds_COs, color_cells_by="Dx", label_cell_groups=FALSE,cell_size=0.45,cell_stroke=0.2)
-# cds_COs <- align_cds(cds_COs, num_dim = 50, alignment_group = "Dx")
-# Now I saved a specific file with aligned cds!!!!!
 
 cds_hOLs <- reduce_dimension(cds_hOLs)
 cds_COs <- reduce_dimension(cds_COs)
@@ -319,45 +76,6 @@ table(pData(cds_COs)$cell_type2)
 table(pData(cds_vso)$cell_type2)
 table(pData(cds_hippo)$cell_type2)
 
-
-# This is better:
-
-get_earliest_principal_node <- function(cds_hOLs, time_bin='oligodendrocytes'){
-  cell_ids <- which(colData(cds_hOLs)[, "cell_type2"] == time_bin)
-  
-  closest_vertex <-
-    cds_hOLs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
-  closest_vertex <- as.matrix(closest_vertex[colnames(cds_hOLs), ])
-  root_pr_nodes <-
-    igraph::V(principal_graph(cds_hOLs)[["UMAP"]])$name[as.numeric(names
-                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
-  
-  root_pr_nodes
-}
-
-get_earliest_principal_node <- function(cds_COs, time_bin='fetal_replicating'){
-  cell_ids <- which(colData(cds_COs)[, "cell_type2"] == time_bin)
-  
-  closest_vertex <-
-    cds_COs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
-  closest_vertex <- as.matrix(closest_vertex[colnames(cds_COs), ])
-  root_pr_nodes <-
-    igraph::V(principal_graph(cds_COs)[["UMAP"]])$name[as.numeric(names
-                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
-  
-  root_pr_nodes
-}
-
-cds_hOLs <- order_cells(cds_hOLs, root_pr_nodes=get_earliest_principal_node(cds_hOLs))
-cds_COs <- order_cells(cds_COs, root_pr_nodes=get_earliest_principal_node(cds_COs))
-
-plot_cells(cds_COs,
-           color_cells_by = "pseudotime",
-           label_cell_groups=FALSE,
-           label_leaves=FALSE,
-           label_branch_points=FALSE,
-           cell_size=0.8,cell_stroke=0.2,
-           graph_label_size=3)
 
 # Subset your organoids by cell-types:
 
@@ -448,7 +166,7 @@ reducedDims(cds_astro_COs)$UMAP <- reducedDims(cds_COs)$UMAP[astro_COs, ]
 reducedDims(cds_oligo_OPC_hOL)$UMAP <- reducedDims(cds_hOLs)$UMAP[oligo_OPC_hOL, ]
 
 
-# 4. The Magic Step: Re-Cluster & Learn Graph
+# 4. Re-Cluster & Learn Graph
 
 cds_neurons_vso <- cluster_cells(cds_neurons_vso, reduction_method = "UMAP",k=5)
 cds_neurons_vso <- learn_graph(cds_neurons_vso, use_partition = FALSE)
@@ -518,7 +236,7 @@ p_oligo_OPC_hOL<-plot_cells(cds_oligo_OPC_hOL,
                             label_groups_by_cluster = FALSE)
 p_oligo_OPC_hOL
 
-cds_oligo_OPC_hOL <- order_cells(cds_oligo_OPC_hOL, reduction_method = 'UMAP') # Start from the most faraway OPC
+cds_oligo_OPC_hOL <- order_cells(cds_oligo_OPC_hOL, reduction_method = 'UMAP') # Select starting point from graphical user interface
 
 
 p1<-plot_cells(cds_oligo_OPC_hOL,
@@ -530,6 +248,158 @@ p1<-plot_cells(cds_oligo_OPC_hOL,
            graph_label_size=3) + ggtitle("OL OPC hOL")
 
 p1
+
+# Select trajectories for visualization and calculation of Moran's I statistics
+
+p_repl_vso<-plot_cells(cds_repl_vso,
+                       color_cells_by = "pseudotime",
+                       group_cells_by = "day",
+                       label_cell_groups=FALSE,
+                       label_leaves=FALSE,
+                       label_branch_points=FALSE,
+                       cell_size=0.5,cell_stroke=0.2,
+                       graph_label_size=3) + ggtitle("Fetal replicating VSO")
+p_repl_vso
+
+table(colData(cds_hOLs)$cell_type2)
+
+
+p_OL_OPC_hOL<-plot_cells(cds_oligo_OPC_hOL,
+                       color_cells_by = "pseudotime",
+                       label_cell_groups=FALSE,
+                       label_leaves=FALSE,
+                       label_branch_points=FALSE,
+                       cell_size=0.8,cell_stroke=0.4,
+                       graph_label_size=3) + ggtitle("OPC and Oligodendrocytes hOL")
+p_OL_OPC_hOL
+
+
+p_fetal_Q_COs<-plot_cells(cds_fetal_Q_COs,
+                      color_cells_by = "pseudotime",
+                      label_cell_groups=FALSE,
+                      label_leaves=FALSE,
+                      label_branch_points=FALSE,
+                      cell_size=0.8,cell_stroke=0.2,
+                      graph_label_size=3) + ggtitle("Fetal quiescent COs")
+p_fetal_Q_COs
+
+p_fetal_Q_VSO<-plot_cells(cds_fetal_Q_vso,
+                          color_cells_by = "pseudotime",
+                          label_cell_groups=FALSE,
+                          label_leaves=FALSE,
+                          label_branch_points=FALSE,
+                          cell_size=0.7,cell_stroke=0.2,
+                          graph_label_size=3) + ggtitle("Fetal quiescent VSO")
+p_fetal_Q_VSO
+
+p_neurons_VSO<-plot_cells(cds_neurons_vso,
+                          color_cells_by = "pseudotime",
+                          label_cell_groups=FALSE,
+                          label_leaves=FALSE,
+                          label_branch_points=FALSE,
+                          cell_size=0.8,cell_stroke=0.2,
+                          graph_label_size=3) + ggtitle("Neurons VSO")
+
+p_neurons_VSO # We will decide
+
+p_neurons_COs<-plot_cells(cds_neurons_COs,
+                          color_cells_by = "pseudotime",
+                          label_cell_groups=FALSE,
+                          label_leaves=FALSE,
+                          label_branch_points=FALSE,
+                          cell_size=0.8,cell_stroke=0.2,
+                          graph_label_size=3) + ggtitle("Neurons COs")
+
+p_neurons_COs # No, too few cells
+
+
+
+# 3. Run Moran's I (knn)
+
+res_neurons_vso <- graph_test(cds_neurons_vso, neighbor_graph = "knn", cores = 8)
+res_fetal_Q_vso <- graph_test(cds_fetal_Q_vso, neighbor_graph = "knn", cores = 8)
+res_repl_vso <- graph_test(cds_repl_vso, neighbor_graph = "knn", cores = 8)
+res_astro_vso <- graph_test(cds_astro_vso, neighbor_graph = "knn", cores = 8)
+
+res_fetal_Q_COs <- graph_test(cds_fetal_Q_COs, neighbor_graph = "knn", cores = 8)
+res_repl_COs <- graph_test(cds_repl_COs, neighbor_graph = "knn", cores = 8)
+res_astro_COs <- graph_test(cds_astro_COs, neighbor_graph = "knn", cores = 8)
+
+res_oligo_OPC_hOL <- graph_test(cds_oligo_OPC_hOL, neighbor_graph = "knn", cores = 8)
+
+
+print(dplyr::add_rownames(res_oligo_OPC_hOL) %>%
+        dplyr::arrange(plyr::desc(morans_test_statistic), plyr::desc(-q_value)) %>% head(200),n=200)
+
+
+# Define our slice thresholds; we use the outliers by IQR
+
+neurons_vso_out<-boxplot(res_neurons_vso$morans_I)$out
+neurons_vso_out<-which(res_neurons_vso$morans_I %in% neurons_vso_out)
+neurons_vso_out<-res_neurons_vso[neurons_vso_out,]
+neurons_vso_out<-neurons_vso_out$gene_name
+
+fetal_Q_vso_out<-boxplot(res_fetal_Q_vso$morans_I)$out
+fetal_Q_vso_out<-which(res_fetal_Q_vso$morans_I %in% fetal_Q_vso_out)
+fetal_Q_vso_out<-res_fetal_Q_vso[fetal_Q_vso_out,]
+fetal_Q_vso_out<-fetal_Q_vso_out$gene_name
+
+repl_vso_out<-boxplot(res_repl_vso$morans_I)$out
+repl_vso_out<-which(res_repl_vso$morans_I %in% repl_vso_out)
+repl_vso_out<-res_repl_vso[repl_vso_out,]
+repl_vso_out<-repl_vso_out$gene_name
+
+astro_vso_out<-boxplot(res_astro_vso$morans_I)$out
+astro_vso_out<-which(res_astro_vso$morans_I %in% astro_vso_out)
+astro_vso_out<-res_astro_vso[astro_vso_out,]
+astro_vso_out<-astro_vso_out$gene_name
+
+fetal_Q_COs_out<-boxplot(res_fetal_Q_COs$morans_I)$out
+fetal_Q_COs_out<-which(res_fetal_Q_COs$morans_I %in% fetal_Q_COs_out)
+fetal_Q_COs_out<-res_fetal_Q_COs[fetal_Q_COs_out,]
+fetal_Q_COs_out<-fetal_Q_COs_out$gene_name
+
+astro_COs_out<-boxplot(res_astro_COs$morans_I)$out
+astro_COs_out<-which(res_astro_COs$morans_I %in% astro_COs_out)
+astro_COs_out<-res_astro_COs[astro_COs_out,]
+astro_COs_out<-astro_COs_out$gene_name
+
+repl_COs_out<-boxplot(res_repl_COs$morans_I)$out
+repl_COs_out<-which(res_repl_COs$morans_I %in% repl_COs_out)
+repl_COs_out<-res_repl_COs[repl_COs_out,]
+repl_COs_out<-repl_COs_out$gene_name
+
+
+OL_OPC_hOL_out<-boxplot(res_oligo_OPC_hOL$morans_I)$out
+OL_OPC_hOL_out<-which(res_oligo_OPC_hOL$morans_I %in% OL_OPC_hOL_out)
+OL_OPC_hOL_out<-res_oligo_OPC_hOL[OL_OPC_hOL_out,]
+OL_OPC_hOL_out<-OL_OPC_hOL_out$gene_name
+OL_OPC_hOL_out
+
+# Extract lists of interest:
+
+Gene_sets_from_trajectory_outliers_COs<-list("Fetal Q COs"=fetal_Q_COs_out,
+                                       "Replicating COs"=repl_COs_out,
+                                       "Astro COs"=astro_COs_out)
+
+
+Gene_sets_from_trajectory_outliers_vso<-list("Neurons vso"=neurons_vso_out,
+                                       "Fetal Q vso"=fetal_Q_vso_out,
+                                       "Replicating vso"=repl_vso_out,
+                                       "Astro vso"=astro_vso_out)
+
+
+Gene_sets_from_trajectory_outliers_hOL<-OL_OPC_hOL_out
+
+Gene_sets_from_trajectory_outliers_hippo<-list("Neurons hippo"=neurons_hippo_out,
+                                             "Fetal Q hippo"=fetal_Q_hippo_out,
+                                             "Replicating hippo"=repl_hippo_out)
+
+
+save(Gene_sets_from_trajectory_outliers_COs,Gene_sets_from_trajectory_outliers_hOL,
+     Gene_sets_from_trajectory_outliers_vso,
+     Gene_sets_from_trajectory_outliers_hippo,
+     file="Gene_sets_from_trajectory_outliers_COs_vso_hOL_hippo_final_01102026.RData")
 
 
 
