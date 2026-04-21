@@ -1,434 +1,373 @@
 
 ###### Load the required packages: ######
 
-library(dplyr)
-library(plyr)
-library(patchwork)
-library(WGCNA)
-library(sctransform)
-library(tidyverse) # dplyr and ggplot2
-library(Seurat) # Seurat toolkit
-library(SeuratData)
-library(hdf5r) # for data import
-library(patchwork) # for plotting
-library(presto) # for differential expression
-library(glmGamPoi) # for sctransform
-library(Azimuth)
-library(future)
-plan()
+# --- Setup and Package Loading ---
 
-options(future.globals.maxSize = 800000 * 1024^2) # This is for parallelization, or you get error.
+# Load essential packages
+# Using `suppressPackageStartupMessages` to keep the console clean
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(purrr) # For functional programming (map, walk, etc.)
+  library(tidyr) # For data manipulation (e.g., pivot_longer)
+  library(ggplot2) # For plotting
+  library(Seurat) # Seurat toolkit
+  library(hdWGCNA) # hdWGCNA for co-expression network analysis
+  library(WGCNA) # WGCNA functions
+  library(patchwork) # For combining plots
+  library(clusterProfiler) # For enrichment analysis
+  library(org.Hs.eg.db) # Human annotation database
+  library(lmerTest) # For mixed-effects models
+  library(readxl) # For reading Excel files
+  library(openxlsx) # For writing Excel files
+  library(GeneOverlap) # For gene set overlap analysis
+  library(ComplexHeatmap) # For heatmaps
+  library(circlize) # For color customization in ComplexHeatmap
+  library(rrvgo) # For semantic similarity reduction
+  library(here) # For robust file path management
+  library(tibble)
+  library(stringr)
+  library(cowplot)
+})
 
-library(hdWGCNA)
-library(HelpersMG)
+# Set global options
+options(future.globals.maxSize = 800000 * 1024^2) # For parallelization
+theme_set(theme_cowplot()) # Using the cowplot theme for ggplot
+set.seed(12345) # Set random seed for reproducibility
+enableWGCNAThreads(nThreads = 12) # Optionally enable multithreading
 
-# single-cell analysis package
-library(Seurat)
-
-# plotting and data science packages
-library(cowplot)
-
-# using the cowplot theme for ggplot
-theme_set(theme_cowplot())
-
-# set random seed for reproducibility
-set.seed(12345)
-
-# optionally enable multithreading
-enableWGCNAThreads(nThreads = 12)
-
+# Clear garbage
 collectGarbage()
 
-##### Create the list with Ruzicka CTRL and SCZ data #####
+# --- Create Seurat Objects and Perform QC ---
 
-files <- list.files(path = "~/.../SZBDMulti-Seq/", pattern = "^CON", full.names = TRUE)
-files
-
-files1 <- list.files(path = "~/.../SZBDMulti-Seq/", pattern = "^SZ", full.names = TRUE)
-files1
-
-filesAll<-c(files,files1)
-filesAll
-
-data_list <- list()
-
-# SCZ and CTRL
-
-for (file in filesAll) {
-  data <- load(file)
-  data_list[[file]] <- data
-}
-
-collectGarbage()
-
-data_list <- list(CON1=CON1,CON2=CON2,CON3=CON3,CON4=CON4,CON5=CON5,CON6=CON6,
-                  CON7=CON7,CON8=CON8,CON9=CON9,CON10=CON10,CON11=CON11,CON12=CON12,
-                  CON13=CON13,CON14=CON14,CON15=CON15,CON16=CON16,CON17=CON17,CON18=CON18,
-                  CON19=CON19,CON20=CON20,CON21=CON21,CON22=CON22,CON23=CON23,CON24=CON24,
-                  SZ1=SZ1,SZ2=SZ2,SZ3=SZ3,SZ4=SZ4,SZ5=SZ5,SZ6=SZ6,
-                  SZ7=SZ7,SZ8=SZ8,SZ9=SZ9,SZ10=SZ10,SZ11=SZ11,SZ12=SZ12,
-                  SZ13=SZ13,SZ14=SZ14,SZ15=SZ15,SZ16=SZ16,SZ17=SZ17,SZ18=SZ18,
-                  SZ19=SZ19,SZ20=SZ20,SZ21=SZ21,SZ22=SZ22,SZ23=SZ23,SZ24=SZ24)
-
-table<-vector(mode = "list",length = length(data_list))
-
-for (i in 1:length(data_list)) {
-  table[[i]]<-table(data_list[[i]]@meta.data$orig.ident)
+# Define a function to process individual Seurat objects
+process_seurat_sample <- function(file_path) {
+  # Extract sample name from file path
+  sample_name <- tools::file_path_sans_ext(basename(file_path)) %>%
+    str_remove("-annotated_matrix")
   
+  message("Processing sample: ", sample_name)
+  
+  # Read data
+  data_matrix <- read.delim(file_path, stringsAsFactors = TRUE) %>%
+    column_to_rownames(var = "featurekey")
+  
+  # Create Seurat object
+  seurat_obj <- CreateSeuratObject(
+    counts = data_matrix,
+    project = sample_name,
+    min.cells = 3,
+    min.features = 200
+  )
+  
+  # Calculate mitochondrial percentage
+  seurat_obj[["percent.mt"]] <- PercentageFeatureSet(seurat_obj, pattern = "^MT-")
+  
+  return(seurat_obj)
 }
 
-table # This is the total number of cells per donor
+# Define base directory for data
 
-table(data_list[["CON1"]]@meta.data[["cell_type_idents"]]) # These are the cell types per donor
 
-save(data_list,file="CON_SCZ_seurat_list.RData") # These are 48 donors
+base_dir<- "/home/.../your_directory/"
 
-##### Pre-processing for hdWGCNA #########
+# Get list of files
+all_files <- list.files(
+  path = base_dir,
+  pattern = "^(CON|SZ).*\\.txt\\.gz$",
+  full.names = TRUE
+)
 
-load("~/.../SZBDMulti-Seq/CON_SCZ_seurat_list.RData")
+# Process all files and create a list of Seurat objects
+data_list <- all_files %>%
+  set_names(tools::file_path_sans_ext(basename(.)) %>% str_remove("-annotated_matrix")) %>%
+  map(process_seurat_sample)
 
-# Merge CTRL and SCZ CMC data with layer integration:
-
-merged_obj <- merge(data_list[[1]], y = data_list[2:length(data_list)],project="CTRL_SCZ",
-                    add.cell.ids = names(data_list))
+# QC Visualization for a single example (SZ3)
+# To avoid redundancy, let's just use the first object as an example
+if ("SZ3" %in% names(data_list)) {
+  sz3_obj <- data_list[["SZ3"]]
+  
+  # Violin plot for QC metrics
+  VlnPlot(sz3_obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, raster = FALSE) %>% print()
+  
+  # Bar plot for cell counts
+  sz3_obj@meta.data %>%
+    ggplot(aes(x = orig.ident, fill = orig.ident)) +
+    geom_bar(color = "black") +
+    stat_count(geom = "text", colour = "black", size = 3.5, aes(label = ..count..), position = position_stack(vjust = 0.5)) +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+    ggtitle("Number of Cells per SCZ Sample (Example: SZ3)") %>% print()
+}
 
 collectGarbage()
 
-merged_obj
-head(colnames(merged_obj))
+# Consolidate cell counts per donor and cell type
+cell_counts_per_donor <- map(data_list, ~ table(.x@meta.data$orig.ident))
+cell_type_counts_per_donor <- map(data_list, ~ table(.x@meta.data[["cell_type_idents"]]))
 
-merged_obj$cell_type_idents
-rownames(merged_obj[[]])
-unique(sapply(X = strsplit(colnames(merged_obj), split = "_"), FUN = "[", 1))
+# Save the list of Seurat objects
+save(data_list, file = here(base_dir, "CON_SCZ_seurat_list.RData"))
 
-merged_obj <- NormalizeData(merged_obj) # Data normalization
-save(merged_obj,file="Temp_merged_obj.RData")
-rm(data_list)
+# --- Pre-processing for hdWGCNA ---
 
+# Load the list of Seurat objects if not already loaded
+# load(here(base_dir, "CON_SCZ_seurat_list.RData"))
+
+# Merge CTRL and SCZ CMC data
+message("Merging Seurat objects...")
+merged_obj <- merge(data_list[[1]], y = data_list[2:length(data_list)], project = "CTRL_SCZ", add.cell.ids = names(data_list))
+rm(data_list) # Clear data_list to free memory
 collectGarbage()
+
+# Pre-processing steps
+message("Performing Seurat pre-processing steps...")
+merged_obj <- NormalizeData(merged_obj)
 merged_obj <- FindVariableFeatures(merged_obj)
-save(merged_obj,file="Temp_merged_obj.RData")
-
-merged_obj <- ScaleData(merged_obj) # Scaling
-save(merged_obj,file="Temp_merged_obj.RData")
-
+merged_obj <- ScaleData(merged_obj)
 merged_obj <- RunPCA(merged_obj)
-save(merged_obj,file="Temp_merged_obj.RData")
 
-merged_obj[[]]
-Sample<-rownames(merged_obj[[]])
+# Add 'Sample' metadata (using the cell original identity as sample)
+merged_obj[["Sample"]] <- merged_obj$orig.ident
 
-merged_obj[["Sample"]]<-Sample
+# Visualize PCA
+DimHeatmap(merged_obj, dims = 1, cells = 500, balanced = TRUE) %>% print()
+DimPlot(merged_obj, group.by = 'cell_type_idents', label = TRUE) +
+  umap_theme() + ggtitle('All: CTRL-SCZ SZBDMultiSeq') + NoLegend() %>% print()
 
-DimHeatmap(merged_obj, dims = 1, cells = 500, balanced = TRUE)
+# Integrate layers
+message("Integrating layers...")
+merged_obj <- IntegrateLayers(
+  object = merged_obj,
+  method = CCAIntegration,
+  orig.reduction = "pca",
+  new.reduction = "integrated.cca",
+  verbose = TRUE
+)
 
-p <- DimPlot(merged_obj, group.by='cell_type_idents', label=TRUE) +
-  umap_theme() + ggtitle('All: CTRL-SCZ SZBDMultiSeq') + NoLegend()
+save(merged_obj, file = here(base_dir, "SZBDMultiSeq_CTRL_SCZ_n48_merged_seurat_integrated_layers.RData"))
+collectGarbage()
 
-p
+# Plot integrated layers
+DimPlot(merged_obj, group.by = 'cell_type_idents', label = TRUE) +
+  umap_theme() + ggtitle('CTRL SCZ Integrated Layers') + NoLegend() %>% print()
 
-merged_obj <- IntegrateLayers(object = merged_obj, method = CCAIntegration, orig.reduction = "pca", new.reduction = "integrated.cca",
-                              verbose = TRUE)
-
-save(merged_obj,file="SZBDMultiSeq_CTRL_SCZ_n48_merged_seurat_integrated_layers_05052025.RData") 
-
-Cells(merged_obj)
-num_cells <- ncol(merged_obj)
-Idents(merged_obj)
-
-p1 <- DimPlot(merged_obj, group.by='cell_type_idents', label=TRUE) +
-  umap_theme() + ggtitle('CTRL SCZ integrated layers') + NoLegend()
-
-p1
-
-Layers(merged_obj)
-
-# Now that integration is complete, rejoin layers
-
+# Join layers
+message("Joining layers...")
 merged_obj[["RNA"]] <- JoinLayers(merged_obj[["RNA"]])
-
-Layers(merged_obj)
-
+save(merged_obj, file = here(base_dir, "SZBDMultiSeq_CTRL_SCZ_n48_merged_seurat_integrated_joined_layers.RData"))
 collectGarbage()
 
-save(merged_obj,file="CMC_CTRL_SCZ_n24_merged_seurat_integrated_joined_layers_06162025.RData") # This is in X:\...\; ideally, in a data storage folder
-                                                                                               # For cell proportion comparison you have to temporarily upload the object from there.
+# Check the object (PCA plot)
+DimPlot(merged_obj, reduction = "pca", group.by = 'cell_type_idents', label = TRUE, repel = TRUE) +
+  umap_theme() + ggtitle('CTRL SCZ Ruzicka') %>% print()
 
+# --- Apply hdWGCNA to Cell Type Subsets ---
 
-# Check the object:
+# Load the merged and joined Seurat object
+# load(here(base_dir, "SZBDMultiSeq_CTRL_SCZ_n48_merged_seurat_integrated_joined_layers.RData"))
+Idents(object = merged_obj) <- "cell_type_idents"
 
-p <- DimPlot(merged_obj, reduction="pca",group.by='cell_type_idents', label=TRUE, repel=T) +
-  umap_theme() + ggtitle('CTRL SCZ Ruzicka') # + NoLegend()
-
-p
-
-##### Apply hdWGCNA to the merged and joined layers object in CMC CTRL and SCZ data ########
-
-# Load packages
-# Load the Seurat object:
-
-load("~/.../.../.../.../SZBDMultiSeq_CTRL_SCZ_n48_merged_seurat_integrated_joined_layers_05092025.RData")
-
-collectGarbage()
-
-glimpse(merged_obj)
-
-table(merged_obj$cell_type_idents)
-Idents(object=merged_obj)<-"cell_type_idents"
-Idents(merged_obj)
-
-# Glia
-
-seurat_obj<-subset(x = merged_obj, idents = c("Astro","Micro","Oligo","OPC"), invert = FALSE)
-save(seurat_obj,file="RuzickaSeurat_glia_n48_for_hdWGCNA_05132025.RData") # This is in X:\... These are big files, make sure you have enough storage space.
-
-# Excitatory:
-
-seurat_obj<-subset(x = merged_obj, idents = c("L2/3 IT",
-                                              "L4 IT","L5 IT","L6 IT",
-                                              "L6b"), invert = FALSE)
-save(seurat_obj,file="RuzickaSeurat_excit_n48_for_hdWGCNA_06092025.RData") # This is in: X:\... These are big files, make sure you have enough storage space.
-
-# Inhibitory:
-
-seurat_obj<-subset(x = merged_obj, idents = c("Pvalb","Sst","Vip"), invert = FALSE)
-save(seurat_obj,file="RuzickaSeurat_inhib_n48_for_hdWGCNA_06092025.RData") # This is in: X:\... These are big files, make sure you have enough storage space.
-
-glimpse(seurat_obj)
-
-rm(merged_obj)
-
-collectGarbage()
-
-load("~/.../.../.../.../RuzickaSeurat_inhib_n48_for_hdWGCNA_06092025.RData") # Load one of the three objects: glia, excit, inhib
-
-seurat_obj <- SetupForWGCNA(
-  seurat_obj,
-  gene_select = "fraction", # the gene selection approach
-  fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
-  wgcna_name = "Inhib" # the name of the hdWGCNA experiment, Glia, Excit or Inhib
+# Define cell type groups for subsetting
+cell_type_subsets <- list(
+  "Glia" = c("Astro", "Micro", "Oligo", "OPC"),
+  "Excitatory" = c("L2/3 IT", "L4 IT", "L5 IT", "L6 IT", "L6b"),
+  "Inhibitory" = c("Pvalb", "Sst", "Vip")
 )
 
+# Function to subset and save Seurat objects for hdWGCNA
+subset_and_save_seurat_obj <- function(obj, cell_types, group_name) {
+  message("Subsetting for ", group_name, " cell types...")
+  subset_obj <- subset(x = obj, idents = cell_types, invert = FALSE)
+  save(subset_obj, file = here(base_dir, paste0("RuzickaSeurat_", tolower(group_name), "_n48_for_hdWGCNA_", format(Sys.Date(), "%m%d%Y"), ".RData")))
+  return(subset_obj) # Return the object to potentially use it directly
+}
+
+# Apply subsetting for each group
+seurat_glia <- subset_and_save_seurat_obj(merged_obj, cell_type_subsets[["Glia"]], "Glia")
+seurat_excit <- subset_and_save_seurat_obj(merged_obj, cell_type_subsets[["Excitatory"]], "Excit")
+seurat_inhib <- subset_and_save_seurat_obj(merged_obj, cell_type_subsets[["Inhibitory"]], "Inhib")
+
+rm(merged_obj) # Clear original merged_obj to free memory
 collectGarbage()
 
-Idents(seurat_obj)
-Layers(seurat_obj)
-glimpse(seurat_obj)
-head(seurat_obj[[]])
+# Define a function for hdWGCNA processing
+run_hdWGCNA_workflow <- function(seurat_obj, wgcna_name_suffix) {
+  message("Running hdWGCNA workflow for ", wgcna_name_suffix, "...")
+  
+  seurat_obj <- SetupForWGCNA(
+    seurat_obj,
+    gene_select = "fraction",
+    fraction = 0.05,
+    wgcna_name = wgcna_name_suffix
+  )
+  collectGarbage()
+  
+  message("Constructing metacells for ", wgcna_name_suffix, "...")
+  seurat_obj <- MetacellsByGroups(
+    seurat_obj = seurat_obj,
+    group.by = c("orig.ident", "cell_type_idents"),
+    reduction = 'pca',
+    k = 25,
+    min_cells = 100,
+    max_shared = 5,
+    ident.group = 'cell_type_idents'
+  )
+  collectGarbage()
+  
+  message("Normalizing and scaling metacells for ", wgcna_name_suffix, "...")
+  seurat_obj <- NormalizeMetacells(seurat_obj)
+  seurat_obj <- ScaleMetacells(seurat_obj, features = VariableFeatures(seurat_obj))
+  seurat_obj <- RunPCAMetacells(seurat_obj, features = VariableFeatures(seurat_obj))
+  seurat_obj <- RunHarmonyMetacells(seurat_obj, group.by.vars = 'orig.ident')
+  seurat_obj <- RunUMAPMetacells(seurat_obj, reduction = 'harmony', dims = 1:15)
+  
+  # Plot metacell UMAPs
+  p1 <- DimPlotMetacells(seurat_obj, group.by = 'cell_type_idents') + umap_theme() + ggtitle("Cell Type")
+  p2 <- DimPlotMetacells(seurat_obj, group.by = 'orig.ident') + umap_theme() + ggtitle("Sample")
+  wrap_plots(p1, p2) %>% print()
+  
+  save.image(here(base_dir, paste0("Seurat_metacell_obj_normalized_template_", tolower(wgcna_name_suffix), "_", format(Sys.Date(), "%m%d%Y"), ".RData")))
+  collectGarbage()
+  
+  return(seurat_obj)
+}
 
-orig_ident<-table(seurat_obj@meta.data$orig.ident)
-sum(orig_ident)
+# Run hdWGCNA workflow for each cell type group (example for inhibitory)
+# For the other groups, uncomment the lines below
+# seurat_glia <- run_hdWGCNA_workflow(seurat_glia, "Glia")
+# seurat_excit <- run_hdWGCNA_workflow(seurat_excit, "Excit")
+seurat_inhib <- run_hdWGCNA_workflow(seurat_inhib, "Inhib")
 
-# Construct metacells  in each group; this is time consuming!
+# --- Create Cell-Type Specific Co-expression Networks ---
 
-seurat_obj <- MetacellsByGroups(
-  seurat_obj = seurat_obj,
-  group.by = c("orig.ident","cell_type_idents"), # specify the columns in seurat_obj@meta.data to group by; in this case by donor and cell-type
-  reduction = 'pca', # select the dimensionality reduction to perform KNN on
-  k = 25, # nearest-neighbors parameter
-  min_cells = 100,
-  max_shared = 5, # maximum number of shared cells between two metacells; I took here a minimum; they use 10 in the tutorial
-  ident.group = 'cell_type_idents' # set the Idents of the metacell seurat object
-)
-collectGarbage()
+# Load one of the processed Seurat objects (e.g., inhibitory)
+# load(here(base_dir, "Seurat_metacell_obj_normalized_template_inhib.RData"))
 
-Idents(seurat_obj)
-Layers(seurat_obj)
-glimpse(seurat_obj)
-head(seurat_obj[[]])
+# Define a function to construct and analyze WGCNA network
+analyze_wgcna_network <- function(seurat_obj, cell_type_group_name, wgcna_name_suffix) {
+  message("Analyzing WGCNA network for ", cell_type_group_name, " (", wgcna_name_suffix, ")...")
+  
+  # Set expression data for WGCNA
+  seurat_obj <- SetDatExpr(
+    seurat_obj,
+    group_name = cell_type_group_name, # Example: "Vip"
+    group.by = 'cell_type_idents',
+    assay = 'RNA',
+    slot = 'data'
+  )
+  collectGarbage()
+  
+  # Test soft powers
+  seurat_obj <- TestSoftPowers(seurat_obj, networkType = 'signed')
+  plot_list <- PlotSoftPowers(seurat_obj)
+  wrap_plots(plot_list, ncol = 2) %>% print()
+  power_table <- GetPowerTable(seurat_obj)
+  message("Soft power table for ", cell_type_group_name, ":")
+  print(head(power_table))
+  
+  # Construct co-expression network
+  message("Constructing network for ", cell_type_group_name, "...")
+  seurat_obj <- ConstructNetwork(seurat_obj, tom_name = 'TOM')
+  collectGarbage()
+  
+  # Plot dendrogram
+  PlotDendrogram(seurat_obj, main = paste0('Module Dendrogram (', cell_type_group_name, ')')) %>% print()
+  
+  # Calculate module eigengenes (harmonized MEs)
+  message("Calculating module eigengenes for ", cell_type_group_name, "...")
+  seurat_obj <- ModuleEigengenes(seurat_obj, group.by.vars = "orig.ident")
+  save.image(here(base_dir, paste0("Ruzicka_seurat_metacell_obj_", cell_type_group_name, "_normalized_", format(Sys.Date(), "%m%d%Y"), ".RData")))
+  collectGarbage()
+  
+  # Compute eigengene-based connectivity (kME)
+  message("Computing kME for ", cell_type_group_name, "...")
+  seurat_obj <- ModuleConnectivity(seurat_obj, group.by = 'cell_type_idents', group_name = cell_type_group_name) # Adjust group_name as needed
+  
+  # Get and rename modules
+  seurat_obj <- ResetModuleNames(seurat_obj, new_name = paste0(cell_type_group_name, "-M"))
+  
+  # Plot KMEs
+  PlotKMEs(seurat_obj, ncol = 5) %>% print()
+  
+  # Get module assignment table and hub genes
+  modules <- GetModules(seurat_obj) %>% subset(module != 'grey')
+  hub_df <- GetHubGenes(seurat_obj, n_hubs = 20)
+  message("Hub genes for ", cell_type_group_name, ":")
+  print(hub_df)
+  
+  return(list(seurat_obj = seurat_obj, modules = modules, hub_df = hub_df))
+}
 
-# Load these objects and perform further processing as recommended in the tutorial; use the default parameters
+# Example usage for one cell type group (e.g., Vip from Inhibitory)
+# This part assumes you've loaded `seurat_inhib` from the previous step.
+# You would repeat this for other specific cell types within Inhibitory, Glia, Excitatory.
 
-# Normalize metacell expression matrix:
-seurat_obj <- NormalizeMetacells(seurat_obj)
-
-# Optional processing of metacells:
-
-metacell_obj <- GetMetacellObject(seurat_obj)
-
-seurat_obj <- ScaleMetacells(seurat_obj, features=VariableFeatures(seurat_obj))
-seurat_obj <- RunPCAMetacells(seurat_obj, features=VariableFeatures(seurat_obj))
-seurat_obj <- RunHarmonyMetacells(seurat_obj, group.by.vars='orig.ident')
-seurat_obj <- RunUMAPMetacells(seurat_obj, reduction='harmony', dims=1:15)
-
-p1 <- DimPlotMetacells(seurat_obj, group.by='cell_type_idents') + umap_theme() + ggtitle("Cell Type")
-p2 <- DimPlotMetacells(seurat_obj, group.by='orig.ident') + umap_theme() + ggtitle("Sample")
-
-p1 | p2
-
-save.image("~/.../Seurat_metacell_obj_normalized_template_inhib_06122025.RData") 
-
-collectGarbage()
-
-# Use each template to calculate cell-type specific networks; these are in data storage
-# If you need to recalculate anything, just put them temporarily in the location below:
-
-load("~/.../SZBDMulti-Seq/Seurat_metacell_obj_normalized_template_glia_02132025.RData")
-load("~/.../SZBDMulti-Seq/Seurat_metacell_obj_normalized_template_excit_06092025.RData") # This is big: 75 GB!!
-load("~/.../SZBDMulti-Seq/Seurat_metacell_obj_normalized_template_inhib_06122025.RData")
-
-####### Create cell-type specific co-expression networks from CTRL + SCZ #########
-
-glimpse(seurat_obj)
-
-seurat_obj <- SetDatExpr(
-  seurat_obj,
-  group_name = c("Example_cell"), # the name of the group of interest in the group.by column
-  group.by='cell_type_idents', # the metadata column containing the cell type info. This same column should have also been used in MetacellsByGroups
-  assay = 'RNA', # using RNA assay
-  slot = 'data' # using normalized data
-)
-
-collectGarbage()
-
-# Test different soft powers:
-seurat_obj <- TestSoftPowers(
-  seurat_obj,
-  networkType = 'signed' # you can also use "unsigned" or "signed hybrid"
-)
-
-# plot the results:
-plot_list <- PlotSoftPowers(seurat_obj)
-
-# assemble with patchwork
-wrap_plots(plot_list, ncol=2)
-
-power_table <- GetPowerTable(seurat_obj)
-head(power_table)
-
-# Construct co-expression network:
-collectGarbage()
-
-seurat_obj <- ConstructNetwork(
-  seurat_obj,
-  tom_name = 'TOM' # name of the topological overlap matrix written to disk
-)
-
-collectGarbage()
-
-PlotDendrogram(seurat_obj, main='Example_cell')
-
-# Calculate module eigengenes (harmonized MEs)
-
-# need to run ScaleData first or else harmony throws an error:
-seurat_obj <- ScaleData(seurat_obj, features=VariableFeatures(seurat_obj))
-
-# compute all MEs in the full single-cell dataset; this can be also time consuming!
-
-seurat_obj <- ModuleEigengenes(
-  seurat_obj,
-  group.by.vars="orig.ident"
-)
-
-save.image("~/.../SZBDMulti-Seq/Ruzicka_seurat_metacell_obj_Pvalb_normalized_06122025.RData") # Move it on data storage
-
-collectGarbage()
-
-# Load here the 'Ruzicka_seurat_metacell_obj_...' from the data storage; for example, L6 IT below: 
-
-# harmonized module eigengenes:
-hMEs <- GetMEs(seurat_obj)
-
-# module eigengenes:
-MEs <- GetMEs(seurat_obj, harmonized=FALSE)
-
-# compute eigengene-based connectivity (kME):
-seurat_obj <- ModuleConnectivity(
-  seurat_obj,
-  group.by = 'cell_type_idents', group_name = 'L6 IT'
-)
-
-collectGarbage()
-
-# Rename the modules
-
-seurat_obj <- ResetModuleNames(
-  seurat_obj,
-  new_name = "L6 IT-M"
-)
-
-# Plot genes ranked by kME for each module
-p <- PlotKMEs(seurat_obj, ncol=5)
-
-p
-
-# Get the module assignment table:
-modules <- GetModules(seurat_obj) %>% subset(module != 'grey')
-
-# show the first 6 columns:
-head(modules)
-hist(as.numeric((modules$`kME_L6 IT-M1`)))
-
-# get hub genes
-hub_df <- GetHubGenes(seurat_obj, n_hubs = 20)
-
-hub_df
+if (exists("seurat_inhib")) {
+  vip_wgcna_results <- analyze_wgcna_network(seurat_inhib, "Vip", "Inhib")
+  seurat_vip <- vip_wgcna_results$seurat_obj
+  modules_vip <- vip_wgcna_results$modules
+}
 
 collectGarbage()
 
-# Extract multiMEs and subset them by dx group; this is valid for the three big seurat objects, named "Glia", "Excit", "Inhib"
+# --- Linear Mixed Models for Differential Module Expression (DMEs) ---
 
-multiMEs<-seurat_obj@misc[["Inhib"]][["wgcna_net"]][["multiMEs"]][["Inhib"]][["data"]]
+# Define a function to prepare multiMEs data and run LMMs
+run_lmm_analysis <- function(seurat_obj, demographics_data_path) {
+  multiMEs <- GetMEs(seurat_obj, harmonized = TRUE) %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column(var = "Sample_Full") # Using tibble::rownames_to_column for clarity
+  
+  # Clean Sample names
+  multiMEs$Sample <- multiMEs$Sample_Full %>%
+    stringr::str_remove("_sub.*") # Using stringr::str_remove for clarity
+  
+  # Determine Dx group (assuming 'CON' for Control, 'SZ' for SCZ)
+  multiMEs$Dx_gr <- ifelse(grepl("^CON", multiMEs$Sample_Full), "CTRL", "SZ") %>% as.factor()
+  
+  # Prepare demographics data
+  demographics_data <- readxl::read_excel("Demographics_technical_all_data.xlsx") %>%
+    dplyr::select(Individual_ID, Age, PMI, Dx) %>% # Explicitly use dplyr::select()
+    dplyr::rename(Sample = Individual_ID)
+  
+  # Join multiMEs with demographics
+  multiMEs_joined <- multiMEs %>%
+    dplyr::left_join(demographics_data, by = "Sample")
+  
+  # Remove rows with NA in demographics (if any)
+  multiMEs_joined <- multiMEs_joined %>% tidyr::drop_na(Age, PMI) # Explicitly use tidyr::drop_na
+   
+  me_cols <- colnames(multiMEs)[grepl("^ME", colnames(multiMEs))]
+  
+  # Run LMM for each ME module
+  lmm_results <- purrr::map_dfr(me_cols, function(me_col) {
+    formula_str <- paste0(me_col, " ~ Dx_gr + Age + PMI + (1 | Sample)")
+    model <- lmer(as.formula(formula_str), data = multiMEs)
+    summary_model <- summary(model)$coefficients %>% as.data.frame()
+    
+    # Extract relevant row for Dx_gr (assuming 'SZ' is the contrast to 'CTRL')
+    dx_row <- summary_model[grep("Dx_grSZ", rownames(summary_model)), ]
+    if(nrow(dx_row) == 1) {
+      tibble::tibble( # Explicitly use tibble::tibble
+        Module = me_col,
+        Estimate = dx_row$Estimate,
+        Std_Error = dx_row$`Std. Error`,
+        t_value = dx_row$`t value`,
+        P_value = dx_row$`Pr(>|t|)`
+      )
+    } else {
+      tibble::tibble(Module = me_col, Estimate = NA, Std_Error = NA, t_value = NA, P_value = NA) # Explicitly use tibble::tibble
+    }
+  })
+  return(list(multiMEs_data = multiMEs, lmm_summary = lmm_results))  # return(list(multiMEs_data = multiMEs_joined, lmm_summary = lmm_results))
+}
 
-multiMEs<-rownames_to_column(multiMEs,var="Dx")
-CTRL_multiMEs <- subset(multiMEs, substr(Dx,1,3) == ("CON")) # that gives you 2270 oligo; 1688 L2/3; 829 L6 IT; 176 L6b!!!; 245 OPC; 
-SCZ_multiMEs <- subset(multiMEs, substr(Dx,1,2) == ("SZ")) # that gives you 2111 oligo; 2874 L2/3; 861 L6 IT; 145 L6b!!!; 260 OPC; 
-Dx_gr<-c(rep(1,length(CTRL_multiMEs$Dx)),rep(0,length(SCZ_multiMEs$Dx)))
-multiMEs["Dx_gr"]<-Dx_gr
 
-Demographics_technical_all_data <- read_excel("Demographics_technical_all_data.xlsx")
+rm(list = setdiff(ls(), "lmm_results"))
+collectGarbage()
 
-##### Create linear mixed modules to study DMEs between CTRL and SCZ #####
-
-load("~/.../Oligo_modules_and_metacell_06182025.RData")
-
-Sample<-multiMEs$Dx
-Sample <- gsub("#.*", "", Sample)
-multiMEs$Dx<-Sample
-
-Dx_gr<-multiMEs$Dx_gr
-Dx_gr <- replace(Dx_gr, Dx_gr == 0, "SZ") 
-Dx_gr <- replace(Dx_gr, Dx_gr == 1, "CTRL") 
-
-multiMEs$Dx_gr<-as.factor(Dx_gr)
-
-class(multiMEs$Dx_gr)
-
-names(multiMEs)[names(multiMEs) == "Dx"] <- "Sample"
-table<-table(multiMEs$Sample) # to determine how many time you repeat age
-names(table)
-names(table) <- gsub("_sub", "", names(table), fixed = TRUE)
-
-Demographics_technical_all_data <- read_excel("Demographics_technical_all_data.xlsx")
-DT<-Demographics_technical_all_data
-
-table_x<-as.data.frame(names(table)); names(table_x)<-"Individual_ID"
-
-DT<-join(table_x,DT,by="Individual_ID",type="left")
-DT<-DT[,c(1,6,11)]
-ID <- DT$Individual_ID
-suffix <- "_sub"
-ID<- paste0(ID, suffix)
-DT$Individual_ID<-ID; names(DT)<-c("Sample","Age","PMI")
-
-multiMEs<-join(multiMEs,DT,by="Sample",type="left")
-
-# Use this to get p vals:
-
-colnames(multiMEs)
-
-coef(summary(M_green <- lmer(MEgreen ~ Dx_gr + Age + PMI + (1 | Sample), data = multiMEs))) # Do this for all modules
-
-predicted <- predict(M_green)
-df <- data.frame(Observed = multiMEs$MEgreen,
-                 Predicted = predicted)
-
-ggplot(df, aes(x = Observed, y = Predicted)) +
-  geom_point() +
-  geom_abline(intercept = 0.0001, slope = 1, 
-              linetype = "dashed") +
-  xlab("Observed MEgreen") +
-  ylab("Predicted MEgreen")
 
 #### Plotting results for DMEs determined with linear mixed models #######
 
@@ -514,210 +453,281 @@ p <- ggplot(results_df, aes(x = Estimate, y = logPval)) +
 
 print(p)
 
-###### Compare cluster of modules for glia, excit and inhib #####
+# --- Compare Clusters of Modules for Glia, Excitatory, and Inhibitory ---
 
-table(modules$color)
-library(data.table)
-modules<-setDT(modules)
-
-Oligo_modules<-split(modules,by="color") # Pey attn here how to split! The order is first color they find, then the next, etc.!
-L23IT_modules<-split(modules,by="color")
-OPC_modules<-split(modules,by="color")
-Astro_modules<-split(modules,by="color")
-Micro_modules<-split(modules,by="color")
-L4IT_modules<-split(modules,by="color")
-L5IT_modules<-split(modules,by="color")
-L6IT_modules<-split(modules,by="color")
-L6b_modules<-split(modules,by="color")
-Pvalb_modules<-split(modules,by="color")
-Sst_modules<-split(modules,by="color")
-Vip_modules<-split(modules,by="color")
-
-# recursive function to remove name from all levels of list
+# Utility function for stripping names (can be generalized or simplified)
 
 stripname <- function(x, name) {
-  thisdepth <- depth(x)
-  if (thisdepth == 0) {
-    return(x)
-  } else if (length(nameIndex <- which(names(x) == name))) {
+  if (!is.list(x)) return(x)
+  if (length(nameIndex <- which(names(x) == name))) {
     x <- x[-nameIndex]
   }
-  return(lapply(x, stripname, name))
+  lapply(x, stripname, name)
 }
 
-# function to find depth of a list element
-# see http://stackoverflow.com/questions/13432863/determine-level-of-nesting-in-r
-depth <- function(this, thisdepth=0){
-  if (!is.list(this)) {
-    return(thisdepth)
-  } else{
-    return(max(unlist(lapply(this,depth,thisdepth=thisdepth))))    
-  }
-}
-
-
-x<-stripname(Oligo_modules,"color")
-
-nsets=length(x)
-
-Oligo<-vector(mode = "list",length = nsets)
-
-for(i in 1:nsets){
+# Function to prepare module gene lists for clusterProfiler
+prepare_modules_for_enrichment <- function(modules_df, prefix) {
+  modules_list <- split(modules_df, by = "color")
   
-  Oligo[i]<-list(as.vector(x[[i]]$gene_name))
+  # Remove the 'color' column from sub-dataframes
+  modules_list <- lapply(modules_list, function(df) df %>% select(-color))
   
+  # Convert to list of gene names
+  modules_list_genes <- lapply(modules_list, function(df) as.vector(df$gene_name))
+  
+  # Rename list elements
+  names(modules_list_genes) <- paste0(prefix, " M", seq_along(modules_list_genes), " ", names(modules_list_genes))
+  
+  return(modules_list_genes)
 }
 
-names(Oligo)<-names(x)
+# Load individual module results (example for inhibitory cell types)
+# Load specific module files (e.g., from previous save steps)
+# load(here(base_dir, "Pvalb_modules_06122025.RData")) # Assuming these contain 'modules' dataframes
+# load(here(base_dir, "Sst_modules_06122025.RData"))
+# load(here(base_dir, "Vip_modules_06122025.RData"))
 
-library(clusterProfiler)
-library(readxl)
+# Assuming `Pvalb_modules`, `Sst_modules`, `Vip_modules` are dataframes
+# from GetModules() and contain 'gene_name' and 'color' columns.
+# Example: Pvalb_modules <- GetModules(seurat_pvalb) %>% subset(module != 'grey')
 
-intramodular_conn_CTRL_and_SCZ_05092023 <- read_excel("~/data-symlink/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/intramodular_conn_CTRL_and_SCZ_05092023.xlsx")
-
-Universe<-intramodular_conn_CTRL_and_SCZ_05092023$Gene_Symbol
-
-library(org.Hs.eg.db)
-
-# For oligo:
-
-Oligo_genes<-unlist(Oligo)
-names(Oligo) # Don't forget to check the names
-
-Group<-c(rep("Oligo M1 brown",length(Oligo[[1]])),
-         rep("Oligo M2 blue",length(Oligo[[2]])),
-         rep("Oligo M3 green",length(Oligo[[3]])),
-         rep("Oligo M4 turquoise",length(Oligo[[4]])),
-         rep("Oligo M5 yellow",length(Oligo[[5]])),
-         rep("Oligo M6 red",length(Oligo[[6]])),
-         rep("Oligo M7 black",length(Oligo[[7]])))
-        
-Oligo_genes<-as.data.frame(cbind(Oligo_genes,Group))
-view(Oligo_genes)
-names(Oligo_genes)<-c("Symbol","Group")
-
-
-# Compare cluster:
-
-formula_res <- compareCluster(Symbol~Group, data=Oligo_genes, fun="enrichGO",OrgDb = org.Hs.eg.db,
-                              keyType = "SYMBOL",ont = "BP",
-                              pvalueCutoff = 0.05,
-                              minGSSize    = 10,
-                              maxGSSize    = 500,
-                              pAdjustMethod = "bonferroni",
-                              universe=Universe,
-                              qvalueCutoff = 0.05)
+# For demonstration, let's create dummy `modules` dataframes if not loaded
+if (!exists("Pvalb_modules")) {
+  Pvalb_modules <- tibble(
+    gene_name = sample(paste0("Gene", 1:500), 100),
+    color = sample(c("turquoise", "red"), 100, replace = TRUE)
+  )
+}
+if (!exists("Sst_modules")) {
+  Sst_modules <- tibble(
+    gene_name = sample(paste0("Gene", 1:500), 100),
+    color = sample(c("green", "blue"), 100, replace = TRUE)
+  )
+}
+if (!exists("Vip_modules")) {
+  Vip_modules <- tibble(
+    gene_name = sample(paste0("Gene", 1:500), 100),
+    color = sample(c("turquoise", "green", "blue"), 100, replace = TRUE)
+  )
+}
 
 
-formula_test<-formula_res
+# Prepare module gene lists for different cell types (select specific modules if needed)
 
+Pvalb_selected_modules <- prepare_modules_for_enrichment(Pvalb_modules %>% filter(color %in% c("turquoise", "red")), "Pvalb")
+Sst_selected_modules <- prepare_modules_for_enrichment(Sst_modules %>% filter(color %in% c("green", "blue")), "Sst")
+Vip_selected_modules <- prepare_modules_for_enrichment(Vip_modules %>% filter(color %in% c("turquoise", "green", "blue")), "Vip")
 
-formula_final<-clusterProfiler::simplify(formula_test,cutoff = 0.7,
-                                         by = "p.adjust",
-                                         select_fun = min,
-                                         measure = "Wang",
-                                         semData = NULL)
+# Combine selected modules into a single list
+inhibitory_modules_combined <- c(Pvalb_selected_modules, Sst_selected_modules, Vip_selected_modules)
 
-pp <- enrichplot::dotplot(formula_final, x="Modules",showCategory = 5,label_format = 120) + facet_grid(. ~ Group) +
-  aes(x=as.factor(Group)) + xlab("Modules") +
-  scale_fill_gradient(low="red",high="grey80",
-                      guide=guide_colorbar(reverse=TRUE, order=1)) +
-  guides(size = guide_legend(override.aes=list(shape=1))) +
-  theme(panel.grid.major.y = element_line(linetype='dotted', color='#808080'),
+# Create a data frame for clusterProfiler
+inhibitory_genes_df <- map_dfr(names(inhibitory_modules_combined), ~ tibble(Symbol = inhibitory_modules_combined[[.x]], Group = .x))
+
+# Load universe genes (e.g., all genes used in WGCNA)
+universe_genes_df <- read_excel(here("Your_background.xlsx"))
+Universe <- universe_genes_df$Gene_Symbol
+
+# Run compareCluster for GO enrichment
+message("Running GO enrichment for inhibitory modules...")
+formula_res <- compareCluster(
+  Symbol ~ Group,
+  data = inhibitory_genes_df,
+  fun = "enrichGO",
+  OrgDb = org.Hs.eg.db,
+  keyType = "SYMBOL",
+  ont = "BP",
+  pvalueCutoff = 0.05,
+  minGSSize = 10,
+  maxGSSize = 500,
+  pAdjustMethod = "bonferroni",
+  universe = Universe,
+  qvalueCutoff = 0.05
+)
+
+# Simplify enrichment results
+formula_final <- clusterProfiler::simplify(
+  formula_res,
+  cutoff = 0.7,
+  by = "p.adjust",
+  select_fun = min,
+  measure = "Wang",
+  semData = NULL
+)
+
+# Plot enrichment results
+pp <- enrichplot::dotplot(formula_final, x = "Modules", showCategory = 5, label_format = 120) +
+  facet_grid(. ~ Group) +
+  aes(x = as.factor(Group)) + xlab("Modules") +
+  scale_fill_gradient(low = "red", high = "grey80", guide = guide_colorbar(reverse = TRUE, order = 1)) +
+  guides(size = guide_legend(override.aes = list(shape = 1))) +
+  theme(panel.grid.major.y = element_line(linetype = 'dotted', color = '#808080'),
         panel.grid.major.x = element_blank())
 
+pp + theme(axis.text.x = element_text(colour = "black", face = "bold", size = 8, angle = 60, vjust = 1, hjust = 1),
+           axis.text.y = element_text(colour = "black", face = "bold", size = 10),
+           strip.text = element_text(size = 9, face = "bold", colour = "darkred")) %>% print()
 
-pp + theme(axis.text.x = element_text(colour="black",face="bold",size=10,angle = 60,vjust = 1, hjust=1), # Very important to put the text exactly under ticks!
-           axis.text.y = element_text(colour="black",face="bold",size=10),
-           strip.text = element_text(size = 11,face="bold",colour = "darkred"))
+# --- Demographics Analysis ---
 
+demographics_data <- read_excel(here("Demographics_technical_all_data.xlsx"))
 
-####### Demographics of Ruzicka data set #########
+# Age and PMI differences
+age_model <- lm(Age ~ Dx, data = demographics_data)
+summary(age_model) %>% print()
+summary(demographics_data$Age) %>% print()
 
-Demographics_technical_all_data <- read_excel("Demographics_technical_all_data.xlsx")
+pmi_model <- lm(PMI ~ Dx, data = demographics_data)
+summary(pmi_model) %>% print()
+summary(demographics_data$PMI) %>% print()
 
-# Differences in age 
-
-M<-lm(Age~Dx, data=Demographics_technical_all_data)
-summary(M)
-summary(Demographics_technical_all_data$Age)
-
-M1<-lm(PMI~Dx, data=Demographics_technical_all_data)
-summary(M1)
-summary(Demographics_technical_all_data$PMI)
-
-# If you want to save it as .csv
-
-dt<-table1(~ Age + factor(Biological_Sex) +
-             PMI | Dx, data = Demographics_technical_all_data, overall = FALSE)
-
-dt<-as.data.frame(dt)
+# Create and save demographics table
+demographics_table <- table1(~ Age + factor(Biological_Sex) + PMI | Dx, data = demographics_data, overall = FALSE) %>%
+  as.data.frame()
 
 wb <- createWorkbook()
 addWorksheet(wb, "summary")
-
-writeData(wb, "summary", x = dt)
-saveWorkbook(wb, "Demographics_Ruzicka_06132025.xlsx", overwrite = TRUE)
+writeData(wb, "summary", x = demographics_table)
+saveWorkbook(wb, here("Demographics_Ruzicka_", format(Sys.Date(), "%m%d%Y"), ".xlsx"), overwrite = TRUE)
 
 collectGarbage()
 
 
-##### Calculate enrichment of bulk DCG in modules with DME #######
+###### Calculate Enrichment of Bulk DCG and DEGs in Modules with DME and organoids #####
 
-# Load modules of interest and the DCG from bulk data:
+# Set working directory (use 'here' for robustness)
+# setwd(here("Your_directory")) # if needed
 
-load("~/.../SZBDMulti-Seq/For_rrvgo_GOBP_06202025.RData") 
+# Load relevant data
+# Load the modules (e.g., Glia_Excit) and bulk DCG files
+# load(here(base_dir, "List_of_genes.RData")) # Assuming this loads 'Glia_Excit' and 'Glia_Excit_genes'
+# load(here("Your_set_of_bulk_RNA_Seq_DCG.RData"))
 
-# Create the list of modules to apply GeneOverlap package:
-# For the entire set: Astro + Oligo + L5IT + L6IT + L6b:
+# For demonstration, creating dummy data if not loaded
+if (!exists("Glia_Excit")) {
+  Glia_Excit <- list(
+    "Oligo-M1-brown" = paste0("Gene", 1:50),
+    "Astro-M11-red" = paste0("Gene", 40:90),
+    "L5IT-M8-tan" = paste0("Gene", 80:130)
+  )
+}
+if (!exists("Out_clCoeff")) Out_clCoeff <- paste0("Gene", sample(1:200, 30))
+if (!exists("Out_kIn_modSize")) Out_kIn_modSize <- paste0("Gene", sample(1:200, 35))
+if (!exists("Out_all3par")) Out_all3par <- paste0("Gene", sample(1:200, 25))
+if (!exists("Out_clCoeff_spec")) Out_clCoeff_spec <- paste0("Gene", sample(1:200, 28))
+if (!exists("Out_kIn_modSize_spec")) Out_kIn_modSize_spec <- paste0("Gene", sample(1:200, 32))
 
-toTest<-Glia_Excit
-names(toTest)
+# Create a data frame from the modules (similar to 'modules' in your original script)
+modules_df_from_list <- map_dfr(names(Glia_Excit), ~tibble(gene_name = Glia_Excit[[.]], color = .))
 
-modules<-Glia_Excit_genes
+# Intersect bulk DCG with module genes
+# Using a function to generalize intersection for different outlier sets
+intersect_dcg_with_modules <- function(dcg_set, module_genes_df) {
+  intersect(dcg_set, module_genes_df$gene_name)
+}
 
-Group<-c(rep("Oligo M1 brown",length(Glia_Excit[[1]])),rep("Astro M11 red",length(Glia_Excit[[2]])),rep("Astro M4 turquoise",length(Glia_Excit[[3]])),
-         rep("L5IT M8 tan",length(Glia_Excit[[4]])),rep("L5IT M16 lightcyan",length(Glia_Excit[[5]])),rep("L5IT M5 brown",length(Glia_Excit[[6]])),
-         rep("L6IT M11 greenyellow",length(Glia_Excit[[7]])),rep("L6b M6 red",length(Glia_Excit[[8]])),rep("L6b M7 black",length(Glia_Excit[[9]])))
-         
-modules$color<-Group
-names(modules)<-c("gene_name","color")
+tested_list <- list(
+  "C spec" = intersect_dcg_with_modules(gene_sets_to_test$`C spec`, modules_df_from_list),
+  "kIn spec" = intersect_dcg_with_modules(gene_sets_to_test$`kIn spec`, modules_df_from_list),
+  "C-kIn shared" = intersect_dcg_with_modules(gene_sets_to_test$`C kIn shared`, modules_df_from_list),
+  "DEGs DLPFC"=intersect_dcg_with_modules(DEG_DLPFC_not_DCG_final, modules_df_from_list),
+  "DEGs Hippo"=intersect_dcg_with_modules(DEG_Hippo_not_DCG_final, modules_df_from_list),
+  "DEGs Caudate"=intersect_dcg_with_modules(DEG_Caudate_not_DCG_final,modules_df_from_list))
 
-load("/.../Final_set_outliers_for_enrichment_07032024.RData")
-load("~/.../Differential_gene_expression_3regions_07112025.RData")
+sapply(tested_list, length) %>% print()
+sapply(Glia_Excit, length) %>% print()
 
-Out_clCoeff_allDME_GO_BP<-intersect(Out_clCoeff,modules$gene_name) # These are the DCGs found in genes that make oligo modules
-Out_kIn_modSize_allDME_GO_BP<-intersect(Out_kIn_modSize,modules$gene_name)
-Out_kTotal_allDME_GO_BP<-intersect(Out_kTotal,modules$gene_name)
+# Calculate total genes making up the modules for GeneOverlap
+total_module_genes <- length(unique(unlist(Glia_Excit)))
 
-tested<-list("C"=Out_clCoeff_allDME_GO_BP,
-             "kIn"=Out_kIn_modSize_allDME_GO_BP,
-             "C_kIn_shared"=Out_shared_C_kIn)
+# Create GeneOverlap objects
 
-sapply(tested, length)
-toTest<-Glia_Excit
+gom_obj <- newGOM(tested_list, Glia_Excit, total_module_genes)
 
-sapply(toTest, length)
+# Get p-value matrix and adjust
+p_val_matrix <- getMatrix(gom_obj, name = "pval")
+p_val_matrix_adj <- p.adjust(p_val_matrix, method = "BH") %>%
+  matrix(nrow = nrow(p_val_matrix), ncol = ncol(p_val_matrix),
+         dimnames = dimnames(p_val_matrix))  # %>%
+  # t() # Transpose for plotting as in original script
 
-total=3624; # total genes that make the modules for a specific cell type; Oligo=2654; L23-IT=6394; L4IT=7749; L5IT=8317; L6IT=6648; L6b=7230; 
-            # Pvalb=3624; Sst=4061 (see below)
+# Heatmap for enrichment results
+mypalette <- colorRamp2(c(0, 0.1, 0.5, 1), c("red", "white", "grey90", "white"), space = "LAB", reverse = TRUE)
 
-# For Sst and Vip
-total<-sum(lengths(Glia_Excit))  
+Heatmap(p_val_matrix_adj, name = "p value", cluster_rows = FALSE, show_row_dend = FALSE,
+        cluster_columns = FALSE,
+        column_title = "Enrichment of differentially connected and differentially expressed genes in \ncell-type specific modules with DME",
+        column_title_gp = gpar(col = "black", fontsize = 14, fontface = "bold"),
+        row_title_side = "right",
+        column_names_rot = 60,
+        column_names_gp = gpar(fontsize = 10, fontface = "bold", col = "black"),
+        row_names_gp = gpar(fontsize = 12, fontface = "bold", col = "black"),
+        col = mypalette,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          p_val <- p_val_matrix_adj[i, j]
+          text_color <- if (p_val < 0.05) 'white' else if (p_val < 0.1) 'blue' else 'black'
+          grid.text(sprintf("%.3f", p_val), x, y, gp = gpar(fontsize = 12, col = text_color, fontface = "bold"))
+        }) %>% print()
 
-gom.obj <- newGOM(tested, toTest,
-                  total)
 
-M<-getMatrix(gom.obj1, name="pval")
-Mt<-t(M)
-Mt.adj<-Mt
+##### Heatmap with p vals and odds ratios #########
 
-Mt.adj[] <- p.adjust(Mt,method="BH")
+# 1. Extract Matrices
+# Using getMatrix pulls the raw values directly into a matrix format
+pval_mat <- getMatrix(gom_obj, name = "pval")
+odds_mat <- getMatrix(gom_obj, name = "odds.ratio")
 
-mypalette <- colorRamp2(c(0, 0.5,1), c("red", "grey90","white"),space="LAB",reverse=TRUE)
+# 2. Adjust P-values
+# We flatten to adjust across all tests, then rebuild the matrix shape
+pval_adj_vec <- p.adjust(as.vector(pval_mat), method = "BH")
+pval_adj_mat <- matrix(pval_adj_vec, 
+                       nrow = nrow(pval_mat), 
+                       ncol = ncol(pval_mat), 
+                       dimnames = dimnames(pval_mat))
+
+# 1. Create a logical mask for your criteria
+# (Assuming you already have odds_mat and pval_adj_mat from the previous step)
+significant_mask <- (pval_adj_mat < 0.07) & (odds_mat >= 3)
+
+library(ComplexHeatmap)
+library(circlize)
+
+# 1. Define the Color Mapping
+# White at 1 (no enrichment), transitioning to Red at 3+ (strong enrichment)
+col_fun = colorRamp2(c(0, 2, 3, 5, 8, 10), c("grey","grey90","white","pink", "mediumpurple1", "red"))
+
+col_fun=brewer.pal(12,"RdYlBu")
+
+# 2. Plotting the Heatmap
+Heatmap(odds_mat, 
+        name = "Odds Ratio",
+        col = col_fun,
+        cluster_rows = FALSE, 
+        cluster_columns = FALSE,
+        column_names_rot = 60,
+        rect_gp = gpar(col = "white", lwd = 1),
+        column_title = "Enrichment of differentially connected and differentially expressed genes in \ncell-type specific modules with DME",
+        row_names_gp = gpar(fontsize = 11,fontface="bold"),
+        column_names_gp = gpar(fontsize = 11,fontface="bold"),
+        column_title_gp = gpar(fontsize = 14,fontface="bold"),
+        # This function handles the cell-specific labels
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          
+          # CRITERIA A: The Hits (OR >= 3 & P_adj < 0.05)
+          if(pval_adj_mat[i, j] < 0.08 && odds_mat[i, j] >= 3) {
+            grid.text(sprintf("%.1f", odds_mat[i, j]), x, y, 
+                      gp = gpar(fontsize = 14, fontface = "bold"))
+            
+            # CRITERIA B: The "Significant but Small" Hits (OR < 3 & P_adj < 0.05)
+          } else if (pval_adj_mat[i, j] < 0.08 && odds_mat[i, j] > 1) {
+            grid.text("p<0.08", x, y, gp = gpar(fontsize = 9, fontface = "bold"))
+          }
+        })
 
 
-Heatmap(Mt.adj, name = "p value", cluster_rows = FALSE,show_row_dend = F,
+# p uncorrected:
+
+Heatmap(p_val_matrix, name = "p value", cluster_rows = FALSE,show_row_dend = F,
         cluster_columns = F,
         column_title = "Enrichment of DCG in all DME with GO:BP",
         column_title_gp = gpar(col="black",fontsize = 18,fontface="bold"),
@@ -726,49 +736,154 @@ Heatmap(Mt.adj, name = "p value", cluster_rows = FALSE,show_row_dend = F,
         row_names_gp = gpar(fontsize = 12,fontface="bold",col="black"),
         col = mypalette,
         cell_fun = function(j, i, x, y, width, height, fill) {
-          if (Mt.adj[i, j] < 0.0499) 
-            grid.text(sprintf("%.3f", Mt.adj[i, j]), x, y, gp = gpar(fontsize = 12,col='white',fontface="bold"))
-          else if(Mt.adj[i, j] < 0.1) 
-            grid.text(sprintf("%.3f", Mt.adj[i, j]), x, y, gp = gpar(fontsize = 12,col='blue',fontface="bold"))
-          else if(Mt.adj[i, j] >= 0.05) 
-            grid.text(sprintf("%.3f", Mt.adj[i, j]), x, y, gp = gpar(fontsize = 12,col='black',fontface="bold"))
+          if (p_val_matrix[i, j] < 0.0499) 
+            grid.text(sprintf("%.3f", p_val_matrix[i, j]), x, y, gp = gpar(fontsize = 12,col='white',fontface="bold"))
+          else if(p_val_matrix[i, j] < 0.1) 
+            grid.text(sprintf("%.3f", p_val_matrix[i, j]), x, y, gp = gpar(fontsize = 12,col='blue',fontface="bold"))
+          else if(p_val_matrix[i, j] >= 0.05) 
+            grid.text(sprintf("%.3f", p_val_matrix[i, j]), x, y, gp = gpar(fontsize = 12,col='black',fontface="bold"))
         } ) # turn off row and column clustering
 
+
+save(gom_obj, gom_obj_spec, modules_df_from_list, tested_list, tested_list_spec,
+     file = here(base_dir, "Enrichment_results.RData"))
 collectGarbage()
+
+####### Create a table with all intersections from the gom.obj #####
+
+# Load packages and the gom.obj
+
+library(GeneOverlap)
+library(purrr)
+library(openxlsx)
+
+load("~/Enrichment_results.RData")
+
+go_nested_list <- gom_obj_spec@go.nested.list
+go_nested_list_org <- gom_obj_spec_organoids@go.nested.list
+
+# --- 2. Extract intersections and prepare for Excel ---
+
+# Initialize an empty list to store data frames for each intersection
+all_intersections_dfs <- list()
+
+# Iterate through the first level of the nested list (e.g., "Oligo M1", "Oligo M2")
+for (list_name_1 in names(go_nested_list)) {
+  # Iterate through the second level (e.g., "C spec", "D spec")
+  for (list_name_2 in names(go_nested_list[[list_name_1]])) {
+    
+    # Construct the full name for the column header
+    column_header <- paste(list_name_1, list_name_2, sep = " - ")
+    
+    # Access the GeneOverlap object
+    go_obj <- go_nested_list[[list_name_1]][[list_name_2]]
+    
+    # Extract the intersection (which is a character vector)
+    intersection_genes <- getIntersection(go_obj)
+    
+    # Convert the intersection to a data frame with a single column
+    # If the intersection is empty, this will create a 0-row data frame
+    if (length(intersection_genes) > 0) {
+      temp_df <- data.frame(Genes = intersection_genes, stringsAsFactors = FALSE)
+      colnames(temp_df) <- column_header # Set the column name
+      all_intersections_dfs[[column_header]] <- temp_df
+    } else {
+      # Handle empty intersections by creating an empty data frame with the correct column name
+      all_intersections_dfs[[column_header]] <- data.frame(matrix(ncol = 1, nrow = 0), stringsAsFactors = FALSE)
+      colnames(all_intersections_dfs[[column_header]]) <- column_header
+    }
+  }
+}
+
+# Combine all data frames into a single data frame.
+# We'll use bind_rows, but since the columns might have different numbers of rows,
+# we need to pad with NAs. This is usually handled automatically by bind_cols
+# if we ensure each data frame only has one column.
+# A safer approach for potentially different lengths is to create one large data frame
+# where each column is an intersection.
+
+# Find the maximum length of any intersection list
+max_len <- max(sapply(all_intersections_dfs, NROW))
+
+# Pad shorter lists with NA to match the maximum length
+padded_intersections <- lapply(all_intersections_dfs, function(df) {
+  if (NROW(df) < max_len) {
+    # Create a vector of NAs to append
+    na_vector <- rep(NA, max_len - NROW(df))
+    # Combine original column with NAs
+    return(data.frame(c(df[[1]], na_vector), stringsAsFactors = FALSE))
+  } else {
+    return(df)
+  }
+})
+
+# Rename the single column in each padded data frame to its intended header
+padded_intersections <- imap(padded_intersections, ~ {
+  names(.x) <- .y
+  .x
+})
+
+
+# Combine all padded data frames column-wise
+final_table <- do.call(cbind, padded_intersections)
+
+
+# --- 3. Write to Excel ---
+
+# Define the output file path
+output_excel_file <- "Overlaps.xlsx"
+
+# Write the data frame to an Excel file
+write.xlsx(final_table, file = output_excel_file, rowNames = FALSE)
+
+cat(paste0("Successfully extracted intersections and saved to '", output_excel_file, "'\n"))
+
 
 #### Rrvgo to see semantic similarities between cell types #######
 
-simMatrix <- calculateSimMatrix(formula_final@compareClusterResult$ID,
-                                orgdb="org.Hs.eg.db",
-                                ont="BP",
-                                method="Wang")
+# This section assumes `formula_final` object is available from the enrichment analysis.
+# For demonstration purposes, if `formula_final` is not present, skip or create a dummy.
+if (exists("formula_final") && inherits(formula_final, "compareClusterResult")) {
+  message("Calculating semantic similarity and reducing terms with rrvgo...")
+  
+  simMatrix <- calculateSimMatrix(
+    formula_final@compareClusterResult$ID,
+    orgdb = "org.Hs.eg.db",
+    ont = "BP",
+    method = "Wang"
+  )
+  
+  scores <- setNames(-log10(formula_final@compareClusterResult$qvalue), formula_final@compareClusterResult$ID)
+  
+  reducedTerms <- reduceSimMatrix(
+    simMatrix,
+    scores = scores,
+    threshold = 0.9,
+    orgdb = "org.Hs.eg.db"
+  )
+  
+  # Plotting with rrvgo
+  
+ heatmapPlot(simMatrix, reducedTerms, annotateParent = TRUE, annotationLabel = "parentTerm", fontsize = 6) %>% print()
+  treemapPlot(reducedTerms) %>% print()
+  scatterPlot(simMatrix, reducedTerms) %>% print()
+  
+  # Store results for different cell type groups if you run this iteratively
+  # Example for inhibitory, you would save it specific to inhibitory
+  simMatrix_Inhib <- simMatrix
+  reducedTerms_Inhib <- reducedTerms
+  
+  # Assuming you would run this for Glia and Excitatory as well, then save them all
+  save(Glia_genes, Excit_genes, Inhib_genes, simMatrix_Excit, simMatrix_Glia, simMatrix_Inhib,
+reducedTerms_Excit, reducedTerms_Glia, reducedTerms_Inhib,
+  file = here(base_dir, "For_rrvgo_cell_groups_glia_excit_inhib_", format(Sys.Date(), "%m%d%Y"), ".RData"))
+} else {
+  message("`formula_final` object not found or is not a 'compareClusterResult'. Skipping rrvgo section.")
+}
 
-scores <- setNames(-log10(formula_final@compareClusterResult$qvalue), formula_final@compareClusterResult$ID)
+collectGarbage()
 
-reducedTerms <- reduceSimMatrix(simMatrix,
-                                scores=scores,
-                                threshold=0.9,
-                                orgdb="org.Hs.eg.db")
 
-heatmapPlot(simMatrix,
-            reducedTerms,
-            annotateParent=TRUE,
-            annotationLabel="parentTerm",
-            fontsize=6)
 
-treemapPlot(reducedTerms)
-scatterPlot(simMatrix,reducedTerms)
-
-reducedTerms_Excit<-reducedTerms
-simMatrix_Excit<-simMatrix
-
-simMatrix_Inhib<-simMatrix
-reducedTerms_Inhib<-reducedTerms
-
-simMatrix_Glia<-simMatrix
-reducedTerms_Glia<-reducedTerms
-
-save(Glia_genes,Excit_genes,Inhib_genes,simMatrix_Excit,simMatrix_Glia,simMatrix_Inhib,
-     reducedTerms_Excit,reducedTerms_Glia,reducedTerms_Inhib,file="For_rrvgo_cell_groups_glia_excit_inhib_06172025.RData")
 
 
