@@ -1,0 +1,751 @@
+
+
+##### 1. Cell-type markers selection #########
+
+library(dplyr)
+library(tidyr)
+library(igraph)
+library(stats) # For cor
+library(Matrix) # For sparse matrix
+
+# Assuming your HPA data frame is named 'proteinatlas'
+
+proteinatlas <- read.delim("/home/edata/For_testing_various_genes_of_interest/proteinatlas.tsv/proteinatlas.tsv", stringsAsFactors=TRUE)
+
+# --- 1. Data Parsing and Matrix Creation ---
+
+# New/Revised 'parse_nTPM' function for better NA handling
+parse_nTPM <- function(nTPM_string) {
+  if (is.na(nTPM_string) || nTPM_string == "" || !is.character(nTPM_string)) {
+    return(NULL)
+  }
+  parts <- strsplit(nTPM_string, ";")[[1]]
+  scores <- setNames(as.numeric(gsub(".*: ", "", parts)),
+                     gsub(":.*", "", parts))
+  return(scores)
+}
+
+nTPM_list <- lapply(as.character(proteinatlas$RNA.single.nuclei.brain.specific.nTPM), parse_nTPM)
+names(nTPM_list) <- as.character(proteinatlas$Gene)
+
+# Convert the list of named vectors into a dense matrix
+all_cell_types_raw <- unique(unlist(lapply(nTPM_list, names)))
+
+hpa_nTPM_matrix <- matrix(0,
+                          nrow = length(proteinatlas$Gene),
+                          ncol = length(all_cell_types_raw),
+                          dimnames = list(proteinatlas$Gene, all_cell_types_raw))
+
+for (i in 1:length(nTPM_list)) {
+  if (!is.null(nTPM_list[[i]])) {
+    hpa_nTPM_matrix[i, names(nTPM_list[[i]])] <- nTPM_list[[i]]
+  }
+}
+
+# CRITICAL TRANSFORMATION STEP: Log2(x+1)
+hpa_transformed_matrix <- log2(hpa_nTPM_matrix + 1)
+
+# --- 2. Gene Filtering (Variance Threshold) ---
+
+gene_variance <- apply(hpa_transformed_matrix, 1, var)
+variance_threshold <- 0.1
+expressed_genes_matrix <- hpa_transformed_matrix[gene_variance > variance_threshold, ]
+print(paste("Genes retained after variance filter:", nrow(expressed_genes_matrix)))
+
+# Assuming:
+# 1. 'hpa_nTPM_matrix' is your original raw nTPM matrix (from parsing)
+# 2. 'expressed_genes_matrix' is your log2(nTPM+1) variance-filtered matrix
+
+# --- 1. Select a Representative Cell Type Column ---
+# We'll use the 'Astrocyte' column as an example for visualization.
+# Adjust the column name below if your matrix uses a slightly different name!
+cell_type_col <- "astrocyte"
+
+# --- 2. Extract Data Vectors ---
+
+# Raw data (from the full set of genes, but only one column)
+raw_vector <- hpa_nTPM_matrix[, cell_type_col]
+# Filter out zeros for better visualization of the non-zero distribution
+raw_vector_non_zero <- raw_vector[raw_vector > 0]
+
+# Transformed and filtered data (6491 genes)
+transformed_vector <- expressed_genes_matrix[, cell_type_col]
+# Filter out zeros (which are log2(1) from low expression)
+transformed_vector_non_zero <- transformed_vector[transformed_vector > 0] 
+
+# --- 3. Visualization using Histograms and Density Plots (Requires ggplot2 or base R) ---
+
+# We'll use base R graphics for simplicity, but ggplot2 is also excellent.
+
+# Set up the plotting area to display two plots side-by-side
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1)) 
+
+# A. Raw Data Distribution (Highly Skewed)
+hist(log10(raw_vector_non_zero), 
+     main = paste("A. Raw nTPM (Log10 of Non-Zero) in", cell_type_col), 
+     xlab = "log10(nTPM)", 
+     col = "lightblue", 
+     border = "white",
+     nclass = 50)
+# Note: We take log10 here just to make the highly skewed raw distribution visible on a plot.
+
+# B. Transformed Data Distribution (More Normal)
+hist(transformed_vector_non_zero, 
+     main = paste("B. Log2(nTPM+1) in", cell_type_col), 
+     xlab = "Log2(nTPM+1) (Non-Zero)", 
+     col = "darkseagreen", 
+     border = "white",
+     nclass = 50)
+
+# Reset plotting layout
+par(mfrow = c(1, 1))
+
+# --- 4. Print Summary Stats (Optional but useful) ---
+print("--- Summary Statistics for Comparison (Non-Zero Values) ---")
+print(paste("Raw nTPM Mean:", mean(raw_vector_non_zero)))
+print(paste("Log2(nTPM+1) Mean:", mean(transformed_vector_non_zero)))
+
+
+# Assuming 'expressed_genes_matrix' is your log2(nTPM+1) matrix (6491 genes)
+
+# --- 1. Function to Calculate Tau Specificity Score ---
+
+# Function remains mathematically correct even for log-transformed data, 
+# as it normalizes each row by its maximum value.
+calculate_tau_score <- function(expression_vector) {
+  # N = number of cell types (columns)
+  N <- length(expression_vector)
+  
+  # Handle the case where N <= 1 
+  if (N <= 1) {
+    return(NA)
+  }
+  
+  # Find the maximum expression for the gene across all cell types
+  # NOTE: This max will be in log2(nTPM+1) space.
+  max_expr <- max(expression_vector, na.rm = TRUE)
+  
+  # If max_expr is zero (i.e., log2(1)=0), the gene is not expressed.
+  if (max_expr == 0) {
+    return(0) 
+  }
+  
+  # Normalize expression by dividing by the maximum expression (x_hat)
+  # x_hat will range from 0 to 1, as required by the formula.
+  x_hat <- expression_vector / max_expr
+  
+  # Apply the Tau formula
+  tau <- sum(1 - x_hat, na.rm = TRUE) / (N - 1)
+  
+  return(tau)
+}
+
+# Apply the function across all 6491 genes (rows)
+gene_tau_scores_transformed <- apply(expressed_genes_matrix, 1, calculate_tau_score)
+
+# Identify the cell type with the highest log-expression for each gene
+dominant_cell_type_transformed <- apply(expressed_genes_matrix, 1, function(row) {
+  if (all(row == 0) || all(is.na(row))) {
+    return(NA)
+  }
+  # Find the column name (cell type) corresponding to the max log-expression
+  return(colnames(expressed_genes_matrix)[which.max(row)])
+})
+
+# Combine results into a data frame
+hpa_specificity_transformed_df <- data.frame(
+  Gene = names(gene_tau_scores_transformed),
+  Tau_Score = gene_tau_scores_transformed,
+  Dominant_Cell_Type = dominant_cell_type_transformed,
+  row.names = names(gene_tau_scores_transformed)
+)
+
+
+# Apply the function across all 6491 genes
+gene_tau_scores_transformed <- apply(expressed_genes_matrix, 1, calculate_tau_score)
+
+# Identify the cell type with the highest log-expression for each gene
+dominant_cell_type_transformed <- apply(expressed_genes_matrix, 1, function(row) {
+  # ... (Use the logic to find which.max(row)) ...
+  return(colnames(expressed_genes_matrix)[which.max(row)])
+})
+
+# Combine results into a data frame
+hpa_specificity_transformed_df <- data.frame(
+  Gene = names(gene_tau_scores_transformed),
+  Tau_Score = gene_tau_scores_transformed,
+  Dominant_Cell_Type = dominant_cell_type_transformed,
+  row.names = names(gene_tau_scores_transformed)
+)
+
+# Assuming hpa_specificity_transformed_df is already loaded
+
+# Define two thresholds for analysis
+TAU_STRICT <- 0.95
+TAU_MODERATE <- 0.85
+
+# --- 1a. Filter for ultra-specific markers (Tau >= 0.95) ---
+# Assuming ultra_specific_markers_df (5581 genes, Tau >= 0.95) is loaded
+ultra_specific_markers_df <- subset(hpa_specificity_transformed_df, Tau_Score >= 0.95)
+
+# Assuming ultra_specific_markers_df (Tau >= 0.95) is loaded
+# The list of granular cell types from the table() output is used for mapping
+
+cell_type_map_refined <- list(
+  Astrocyte_Mk = c("astrocyte", "bergmann glia"),
+  Microglia_Immune_Mk = c("central nervous system macrophage"),
+  Oligodendrocyte_Mk = c("oligodendrocyte"),
+  OPC_Mk = c("oligodendrocyte precursor cell", "committed oligodendrocyte precursor"),
+  Neurovascular_Mk = c("endothelial cell", "pericyte", "vascular associated smooth muscle cell"),
+  
+  # --- Refined Neuronal Subtypes (Regional) ---
+  Cortical_Excitatory_Mk = c("excitatory", "deep-layer corticothalamic and 6b", 
+                             "deep-layer intratelencephalic", "upper-layer intratelencephalic"),
+  Hippocampal_Excitatory_Mk = c("hippocampal CA1-3", "hippocampal CA4", 
+                                "hippocampal dentate gyrus"),
+  Striatal_Neuron_Mk = c("medium spiny neuron", "eccentric medium spiny neuron"),
+  Pan_Inhibitory_Neuron_Mk = c("cerebellar inhibitory", "CGE interneuron", "MGE interneuron", 
+                               "LAMP5-LHX6 and Chandelier", "midbrain-derived inhibitory")
+)
+
+# Initialize the final list of marker sets
+Final_Mk_list_HPA <- list()
+
+print("--- Final HPA-Derived Marker Set Sizes (Tau >= 0.95) ---")
+# Loop through the refined map to aggregate the genes
+for (mk_name in names(cell_type_map_refined)) {
+  target_types <- cell_type_map_refined[[mk_name]]
+  
+  # Extract genes from the ultra_specific_markers_df
+  genes_in_category <- subset(ultra_specific_markers_df, 
+                              Dominant_Cell_Type %in% target_types)$Gene
+  
+  # Store the resulting set
+  Final_Mk_list_HPA[[mk_name]] <- genes_in_category
+  
+  # Print summary
+  print(paste(mk_name, ":", length(genes_in_category), "genes"))
+}
+
+genes_to_check <- c("DRD1", "DRD2", "PPP1R1B", "APOE", "C4")
+check_df <- ultra_specific_markers_df[ultra_specific_markers_df$Gene %in% genes_to_check, ]
+
+if (nrow(check_df) > 0) {
+  print("Found the following genes in the Tau >= 0.95 list:")
+  print(check_df)
+} else {
+  print("None of the targeted genes met the Tau >= 0.95 threshold. Manual addition is required.")
+}
+
+### Add curated markers ######
+
+# Final_Mk_list_HPA$Striatal_Neuron_Mk is already robust (125 genes + DRD1/DRD2)
+
+# Manual Addition of Key Striatal Functional Genes
+# PPP1R1B (DARPP-32) is essential; RGS4 and CTIP2 are crucial for MSN function/identity.
+striatal_additions <- c("PPP1R1B", "RGS4", "CTIP2") 
+
+# Use setdiff() to add only genes not already present in the list
+new_striatal_markers <- setdiff(striatal_additions, Final_Mk_list_HPA$Striatal_Neuron_Mk)
+Final_Mk_list_HPA$Striatal_Neuron_Mk <- c(Final_Mk_list_HPA$Striatal_Neuron_Mk, new_striatal_markers)
+
+sort(Final_Mk_list_HPA$Striatal_Neuron_Mk)
+
+# Final_Mk_list_HPA$Microglia_Immune_Mk already has 1,265 genes
+
+sort(Final_Mk_list_HPA$Microglia_Immune_Mk)
+
+# Manual Addition of Key SCZ- and Function-Related Immune/Glia Markers
+immune_additions <- c("APOE", "C4", "TREM2", "CD68", "HLA-DRA", "TYROBP") 
+
+# Add the new markers to the list
+new_immune_markers <- setdiff(immune_additions, Final_Mk_list_HPA$Microglia_Immune_Mk)
+Final_Mk_list_HPA$Microglia_Immune_Mk <- c(Final_Mk_list_HPA$Microglia_Immune_Mk, new_immune_markers)
+
+lengths(Final_Mk_list_HPA)
+
+
+#### Select markers from PsychENCODE papers #######
+
+library(readxl)
+Ruzicka_cell_type_specificity_science_adg5136_data_s3 <- read_excel("To_answer_reviews/Ruzicka_cell_type_specificity_science.adg5136_data_s3.xlsx")
+
+TFs_PsychENCODE_brainscope <- read_excel("To_answer_reviews/TFs_PsychENCODE_brainscope.xlsx")
+Huuki_Meyers_TableS13_marker_stats_supp_table <- read_excel("To_answer_reviews/Huuki_Meyers_TableS13_marker_stats_supp_table.xlsx",
+sheet = "marker_stats_supp_table")
+
+
+# Assuming Huuki_Meyers_TableS13_marker_stats_supp_table is the dataframe
+
+# 1. Filter for high-confidence markers (Ratio >= 5 AND logFC >= 1)
+HM_high_confidence_markers <- subset(Huuki_Meyers_TableS13_marker_stats_supp_table,
+                                     ratio >= 5 & logFC >= 1)
+
+# 2. Extract Excitatory Markers
+HM_Excitatory_markers <- unique(subset(HM_high_confidence_markers, 
+                                       cellType.target == "Excit")$symbol)
+
+# 3. Extract Inhibitory Markers
+HM_Inhibitory_markers <- unique(subset(HM_high_confidence_markers, 
+                                       cellType.target == "Inhib")$symbol)
+
+print(paste("Huuki-Meyers Excitatory Markers (5x Ratio, logFC > 1):", length(HM_Excitatory_markers)))
+print(paste("Huuki-Meyers Inhibitory Markers (5x Ratio, logFC > 1):", length(HM_Inhibitory_markers)))
+
+
+# Assuming Ruzicka_cell_type_specificity_science_adg5136_data_s3 is the dataframe
+
+# 1. Define Column Groups
+excitatory_cols <- c("Ex-NRGN", "Ex-L2", "Ex-L23", "Ex-L3", "Ex-L4_MYLK", "Ex-L45_MET", 
+                     "Ex-L45_LRRK1", "Ex-L5b_VEN", "Ex-L5b_HTR2C", "Ex-L56", "Ex-L56_CC_NTNG2", 
+                     "Ex-L6_CC_SEMA3A", "Ex-L6b_SEMA3D", "Ex-L6b_SEMA3E")
+inhibitory_cols <- c("In-Rosehip_CHST9", "In-Rosehip_TRPC3", "In-Reelin", "In-VIP", 
+                     "In-PV_Chandelier", "In-PV_Basket", "In-SST")
+glial_cols <- c("Oli", "OPC", "Ast", "Mic", "Endo", "Pericytes")
+
+# 2. Calculate Max Expression in Target Groups
+Ruzicka_cell_type_specificity_science_adg5136_data_s3$Max_Excit <- apply(
+  Ruzicka_cell_type_specificity_science_adg5136_data_s3[, excitatory_cols], 1, max)
+Ruzicka_cell_type_specificity_science_adg5136_data_s3$Max_Inhib <- apply(
+  Ruzicka_cell_type_specificity_science_adg5136_data_s3[, inhibitory_cols], 1, max)
+Ruzicka_cell_type_specificity_science_adg5136_data_s3$Max_Glial <- apply(
+  Ruzicka_cell_type_specificity_science_adg5136_data_s3[, glial_cols], 1, max)
+
+# 3. Apply Filtering Rules (High expression AND Specificity)
+
+# Excitatory Markers from Ruzicka
+Ruzicka_Excitatory_markers <- subset(Ruzicka_cell_type_specificity_science_adg5136_data_s3,
+                                     Max_Excit >= 10 & Max_Excit >= 4 * Max_Glial)$Symbol
+
+# Inhibitory Markers from Ruzicka
+Ruzicka_Inhibitory_markers <- subset(Ruzicka_cell_type_specificity_science_adg5136_data_s3,
+                                     Max_Inhib >= 10 & Max_Inhib >= 4 * Max_Glial)$Symbol
+
+print(paste("Ruzicka Excitatory Markers (PFC Context):", length(Ruzicka_Excitatory_markers)))
+print(paste("Ruzicka Inhibitory Markers (PFC Context):", length(Ruzicka_Inhibitory_markers)))
+
+# Assuming TFs_PsychENCODE_brainscope is the dataframe
+
+# 1. Identify Target TF Columns (Inhibitory)
+tf_inhibitory_cols <- c("Chandelier", "Lamp5", "Lamp5.Lhx6", "Pvalb", "Sncg", "Sst", "Vip")
+
+# 2. Extract TFs active in any inhibitory subtype (value == 1)
+# Create a logical index for rows where at least one inhibitory column is 1
+inhibitory_tf_index <- apply(TFs_PsychENCODE_brainscope[, tf_inhibitory_cols] == 1, 1, any)
+
+# Select the unique TF symbols where the index is TRUE
+TF_Inhibitory_markers <- unique(TFs_PsychENCODE_brainscope[inhibitory_tf_index, ]$TF)
+
+# We will assign these to the Pan_Inhibitory_Neuron_Mk set.
+
+# 3. Extract TFs active in any Excitatory subtype (value == 1)
+tf_excitatory_cols <- c("L2.3.IT", "L4.IT", "L5.6.NP", "L5.ET", "L5.IT", "L6.CT", "L6.IT", "L6.IT.Car3", "L6b")
+excitatory_tf_index <- apply(TFs_PsychENCODE_brainscope[, tf_excitatory_cols] == 1, 1, any)
+TF_Excitatory_markers <- unique(TFs_PsychENCODE_brainscope[excitatory_tf_index, ]$TF)
+
+# We will assign these to the Cortical_Excitatory_Mk set.
+
+print(paste("TF Inhibitory Markers (PFC Context):", length(TF_Inhibitory_markers)))
+print(paste("TF Excitatory Markers (PFC Context):", length(TF_Excitatory_markers)))
+
+# Consolidate Cortical Excitatory Set
+excitatory_additions <- unique(c(Ruzicka_Excitatory_markers, TF_Excitatory_markers))
+
+# Use 'union' (which is the same as c() followed by unique() after filtering for existing genes)
+Final_Mk_list_HPA$Cortical_Excitatory_Mk <- unique(c(Final_Mk_list_HPA$Cortical_Excitatory_Mk, excitatory_additions))
+
+print(paste("Final Cortical_Excitatory_Mk size:", length(Final_Mk_list_HPA$Cortical_Excitatory_Mk)))
+
+# Consolidate Pan-Inhibitory Set
+inhibitory_additions <- unique(c(Ruzicka_Inhibitory_markers, TF_Inhibitory_markers))
+
+Final_Mk_list_HPA$Pan_Inhibitory_Neuron_Mk <- unique(c(Final_Mk_list_HPA$Pan_Inhibitory_Neuron_Mk, inhibitory_additions))
+
+print(paste("Final Pan_Inhibitory_Neuron_Mk size:", length(Final_Mk_list_HPA$Pan_Inhibitory_Neuron_Mk)))
+
+# Assuming Huuki_Meyers_TableS13_marker_stats_supp_table is the dataframe
+
+# 1. Filter for high-confidence markers (Ratio >= 5 AND logFC >= 1)
+HM_high_confidence_markers <- subset(Huuki_Meyers_TableS13_marker_stats_supp_table,
+                                     ratio >= 5 & logFC >= 1)
+
+# 2. Extract Excitatory Markers
+HM_Excitatory_markers <- unique(subset(HM_high_confidence_markers, 
+                                       cellType.target == "Excit")$symbol)
+
+# 3. Extract Inhibitory Markers
+HM_Inhibitory_markers <- unique(subset(HM_high_confidence_markers, 
+                                       cellType.target == "Inhib")$symbol)
+
+print(paste("Huuki-Meyers Excitatory Markers (5x Ratio, logFC > 1):", length(HM_Excitatory_markers)))
+print(paste("Huuki-Meyers Inhibitory Markers (5x Ratio, logFC > 1):", length(HM_Inhibitory_markers)))
+
+# HM_Excitatory_markers has 8 genes.
+Final_Mk_list_HPA$Cortical_Excitatory_Mk <- unique(c(Final_Mk_list_HPA$Cortical_Excitatory_Mk, HM_Excitatory_markers))
+
+# Final size check:
+print(paste("Final Cortical_Excitatory_Mk size (Post-HM addition):", length(Final_Mk_list_HPA$Cortical_Excitatory_Mk)))
+
+# HM_Inhibitory_markers has 10 genes.
+Final_Mk_list_HPA$Pan_Inhibitory_Neuron_Mk <- unique(c(Final_Mk_list_HPA$Pan_Inhibitory_Neuron_Mk, HM_Inhibitory_markers))
+
+# Final size check:
+print(paste("Final Pan_Inhibitory_Neuron_Mk size (Post-HM addition):", length(Final_Mk_list_HPA$Pan_Inhibitory_Neuron_Mk)))
+
+save(Final_Mk_list_HPA,file="Cell_type_markers_11242025.RData")
+
+##### Calculate the gene score specificity #######
+
+load("/home/edata/For_Cambridge_project_January2023/Drafts_for_paper/For_NN_09252025/Cell_type_markers_11242025.RData")
+
+
+library(WGCNA)
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/adjacency_CTRL_11032022.RData")
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Caudate/adjacency_CTRL_12232022.RData")
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Hippocampus/adjacency_CTRL_12222022.RData")
+
+collectGarbage()
+
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/adjacency_SCZ_03132024.RData")
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Caudate/adjacency_SCZ_12232022.RData")
+load("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/Hippocampus/adjacency_SCZ_12222022.RData")
+collectGarbage()
+
+dim(adj_CTRL)
+
+# Assuming 'Final_Mk_list_HPA' holds your 9 final marker lists.
+# The WGCNA gene universe is the set of rownames/colnames of the adjacency matrix.
+wgcna_gene_universe <- rownames(adj_CTRL) 
+
+Final_Mk_list_FILTERED <- list()
+
+print("--- Final Marker Set Sizes After WGCNA Filtering ---")
+for (k in names(Final_Mk_list_HPA)) {
+  # Keep only the marker genes that are present in the WGCNA gene universe
+  filtered_markers <- intersect(Final_Mk_list_HPA[[k]], wgcna_gene_universe)
+  Final_Mk_list_FILTERED[[k]] <- filtered_markers
+  
+  print(paste(k, ":", length(filtered_markers), "genes (filtered from", length(Final_Mk_list_HPA[[k]]), ")"))
+}
+
+# --- PART 1: Define Core Functions and Calculate S' Scores ---
+
+# Define the S' calculation function
+calculate_gene_specificity <- function(gene_i, Mk_set, A_original) {
+  if (length(Mk_set) == 0) return(NA)
+  adjacencies <- A_original[gene_i, Mk_set] 
+  return(mean(adjacencies, na.rm = TRUE))
+}
+
+calculate_S_prime_matrix <- function(A_matrix, Mk_list) {
+  all_genes <- rownames(A_matrix)
+  S_prime_matrix <- matrix(NA, 
+                           nrow = length(all_genes), 
+                           ncol = length(Mk_list),
+                           dimnames = list(all_genes, names(Mk_list)))
+  
+  for (k in names(Mk_list)) {
+    Mk_set <- Mk_list[[k]]
+    if (length(Mk_set) > 0) {
+      S_prime_matrix[, k] <- sapply(all_genes, calculate_gene_specificity, 
+                                    Mk_set = Mk_set, A_original = A_matrix)
+    }
+  }
+  return(S_prime_matrix)
+}
+
+# 1. Calculate S' Matrices for both conditions
+print("Calculating S' for CTRL...")
+results_matrix_S_prime_CTRL <- calculate_S_prime_matrix(adj_CTRL, Final_Mk_list_FILTERED)
+
+print("Calculating S' for SCZ...")
+results_matrix_S_prime_SCZ <- calculate_S_prime_matrix(adj_SCZ, Final_Mk_list_FILTERED)
+
+collectGarbage()
+save(results_matrix_S_prime_CTRL,results_matrix_S_prime_SCZ,file="Cell_type_specificity_score_Hippo_11242025.RData")
+
+# --- PART 2: Alignment and Correlation Function ---
+
+analyze_correlation <- function(topology_vector_name, S_prime_matrix, condition_name, data2_df) {
+  
+  # Alignment: Ensure genes are common and ordered correctly
+  common_genes <- intersect(rownames(S_prime_matrix), data2_df$Symbol)
+  
+  S_prime_ALIGNED <- S_prime_matrix[common_genes, ]
+  data2_ALIGNED <- data2_df[match(common_genes, data2_df$Symbol), ]
+  
+  # Extract the topology vector
+  topology_vector <- data2_ALIGNED[[topology_vector_name]]
+  
+  # Initialize results
+  metric_results_df <- data.frame(
+    Scenario = condition_name,
+    Metric = topology_vector_name,
+    Cell_Type = colnames(S_prime_ALIGNED),
+    Spearman_Rho = NA,
+    P_Value = NA
+  )
+  
+  # Correlation loop
+  for (k_index in 1:ncol(S_prime_ALIGNED)) {
+    test_result <- cor.test(topology_vector, 
+                            S_prime_ALIGNED[, k_index], 
+                            method = "spearman")
+    metric_results_df[k_index, "Spearman_Rho"] <- test_result$estimate
+    metric_results_df[k_index, "P_Value"] <- test_result$p.value
+  }
+  return(metric_results_df)
+}
+
+##### This is important: Calculate the absolute differences and plots for relationships between them ########
+
+library(GGally)
+library(tidyr)
+library(dplyr)
+library(broom)
+library(data.table)
+library(readxl)
+
+intramodular_conn_CTRL_and_SCZ <- read_excel("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/intramodular_connectivity_DLPFC.xlsx")
+
+intraMod_con_refCTRL_modules_12272022 <- read_excel("Hippocampus/intraMod_con_refCTRL_modules_12272022.xlsx")
+intraMod_con_refCTRL_modules_01092023 <- read_excel("Caudate/intraMod_con_refCTRL_modules_01092023.xlsx")
+
+
+data1<-as.data.frame(cbind(intramodular_conn_CTRL_and_SCZ$kTotal_CTRL,intramodular_conn_CTRL_and_SCZ$kTotal_SCZ,
+                           intramodular_conn_CTRL_and_SCZ$kIn_CTRL,intramodular_conn_CTRL_and_SCZ$kIn_SCZ,
+                           intramodular_conn_CTRL_and_SCZ$C_CTRL,intramodular_conn_CTRL_and_SCZ$C_SCZ)) # DLPFC
+data1$Symbol<-as.character(intramodular_conn_CTRL_and_SCZ$Symbol)
+
+names(data1)<-c("kTotal_CTRL","kTotal_SCZ","kIn_CTRL","kIn_SCZ","C_CTRL","C_SCZ","Symbol")
+
+# For Hippo
+data2<-as.data.frame(cbind(intraMod_con_refCTRL_modules_12272022$kTotal_CTRL,intraMod_con_refCTRL_modules_12272022$kTotal_SCZ,
+                           intraMod_con_refCTRL_modules_12272022$kIn_CTRL,intraMod_con_refCTRL_modules_12272022$kIn_SCZ,
+                           intraMod_con_refCTRL_modules_12272022$C_CTRL,intraMod_con_refCTRL_modules_12272022$C_SCZ)) # Hippo
+data2$Symbol<-as.character(intraMod_con_refCTRL_modules_12272022$Symbol)
+
+names(data2)<-c("kTotal_CTRL","kTotal_SCZ","kIn_CTRL","kIn_SCZ","C_CTRL","C_SCZ","Symbol")
+
+# For Caudate
+data3<-as.data.frame(cbind(intraMod_con_refCTRL_modules_01092023$kTotal_CTRL,
+                           intraMod_con_refCTRL_modules_01092023$kTotal_SCZ,intraMod_con_refCTRL_modules_01092023$kIn_CTRL,
+                           intraMod_con_refCTRL_modules_01092023$kIn_SCZ,intraMod_con_refCTRL_modules_01092023$C_CTRL,
+                           intraMod_con_refCTRL_modules_01092023$C_SCZ)) # Caudate
+
+data3$Symbol<-as.character(intraMod_con_refCTRL_modules_01092023$Symbol)
+
+names(data3)<-c("kTotal_CTRL","kTotal_SCZ","kIn_CTRL","kIn_SCZ","C_CTRL","C_SCZ","Symbol")
+
+
+
+# --- PART 1: Alignment and Delta/Abs Delta Calculations (Caudate) ---
+print("--- Starting Full Caudate Correlation Consolidation ---")
+
+# Alignment (Crucial step for all subsequent calculations)
+# Ensure S' matrices are for Caudate
+
+common_genes <- intersect(rownames(results_matrix_S_prime_CTRL), data2$Symbol)
+results_matrix_S_prime_CTRL_ALIGNED <- results_matrix_S_prime_CTRL[common_genes, ]
+results_matrix_S_prime_SCZ_ALIGNED <- results_matrix_S_prime_SCZ[common_genes, ]
+data2_ALIGNED <- data2[match(common_genes, data2$Symbol), ]
+
+# Delta (Signed) Calculation
+Delta_kTotal <- data2_ALIGNED$kTotal_SCZ - data2_ALIGNED$kTotal_CTRL
+Delta_kIn    <- data2_ALIGNED$kIn_SCZ - data2_ALIGNED$kIn_CTRL
+Delta_C      <- data2_ALIGNED$C_SCZ - data2_ALIGNED$C_CTRL
+results_matrix_Delta_S_prime <- results_matrix_S_prime_SCZ_ALIGNED - results_matrix_S_prime_CTRL_ALIGNED
+
+# Absolute Delta Calculation
+AbsDelta_kTotal <- abs(Delta_kTotal)
+AbsDelta_kIn    <- abs(Delta_kIn)
+AbsDelta_C      <- abs(Delta_C)
+results_matrix_AbsDelta_S_prime <- abs(results_matrix_Delta_S_prime)
+
+# Create temporary Delta Data Frames for the analyze_correlation function
+temp_delta_df_hippo <- data.frame(
+  Symbol = common_genes,
+  kTotal_CTRL = data2_ALIGNED$kTotal_CTRL, # Include original metrics for scenarios 1 & 2
+  kTotal_SCZ = data2_ALIGNED$kTotal_SCZ,
+  kIn_CTRL = data2_ALIGNED$kIn_CTRL,
+  kIn_SCZ = data2_ALIGNED$kIn_SCZ,
+  C_CTRL = data2_ALIGNED$C_CTRL,
+  C_SCZ = data2_ALIGNED$C_SCZ,
+  Delta_kTotal = Delta_kTotal,
+  Delta_kIn = Delta_kIn,
+  Delta_C = Delta_C,
+  AbsDelta_kTotal = AbsDelta_kTotal,
+  AbsDelta_kIn = AbsDelta_kIn,
+  AbsDelta_C = AbsDelta_C
+)
+
+
+# --- PART 2: Execute all 4 Scenarios and Store Results ---
+# Use the function analyze_correlation (defined previously)
+final_correlation_list_HIPPO_ALL <- list()
+
+# SCENARIO 1 & 2: CTRL and SCZ Correlations
+print("Running Scenario 1 & 2 (CTRL & SCZ)...")
+# Note: Using temp_delta_df_caudate as the data frame to keep the structure consistent
+for (metric in c("kTotal_CTRL", "kIn_CTRL", "C_CTRL")) {
+  final_correlation_list_HIPPO_ALL[[length(final_correlation_list_HIPPO_ALL) + 1]] <- 
+    analyze_correlation(metric, results_matrix_S_prime_CTRL_ALIGNED, "CTRL", temp_delta_df_hippo)
+}
+
+for (metric in c("kTotal_SCZ", "kIn_SCZ", "C_SCZ")) {
+  final_correlation_list_HIPPO_ALL[[length(final_correlation_list_HIPPO_ALL) + 1]] <- 
+    analyze_correlation(metric, results_matrix_S_prime_SCZ_ALIGNED, "SCZ", temp_delta_df_hippo)
+}
+
+# SCENARIO 3: Signed Delta Correlations
+print("Running Scenario 3 (SIGNED_DELTA)...")
+for (metric in c("Delta_kTotal", "Delta_kIn", "Delta_C")) {
+  final_correlation_list_HIPPO_ALL[[length(final_correlation_list_HIPPO_ALL) + 1]] <- 
+    analyze_correlation(metric, results_matrix_Delta_S_prime, "SIGNED_DELTA", temp_delta_df_hippo)
+}
+
+# SCENARIO 4: Absolute Delta Correlations
+print("Running Scenario 4 (ABS_DELTA)...")
+for (metric in c("AbsDelta_kTotal", "AbsDelta_kIn", "AbsDelta_C")) {
+  final_correlation_list_HIPPO_ALL[[length(final_correlation_list_HIPPO_ALL) + 1]] <- 
+    analyze_correlation(metric, results_matrix_AbsDelta_S_prime, "ABS_DELTA", temp_delta_df_hippo)
+}
+
+
+# --- PART 3: Final Consolidation and Adjustment ---
+hippo_full_results <- do.call(rbind, final_correlation_list_HIPPO_ALL)
+
+# Clean up Metric name for printing (e.g., kTotal_CTRL -> kTotal)
+hippo_full_results$Metric <- gsub("_(CTRL|SCZ)", "", hippo_full_results$Metric)
+
+# Apply Bonferroni correction across all tests (12 metrics * 9 cell types = 108 tests)
+hippo_full_results$Bonf_P_Value <- p.adjust(hippo_full_results$P_Value, method = "bonferroni")
+
+
+# --- PART 4: Print Final Result ---
+print("--- HIPPO FINAL CORRELATION ANALYSIS (CTRL, SCZ, SIGNED_DELTA, ABS_DELTA) ---")
+print(hippo_full_results)
+collectGarbage()
+
+##### Visualization of correlations between absolute differences in network metrics and cell-type specificity score ####
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# 1. Prepare data (Assuming results_matrix_AbsDelta_S_prime and temp_delta_df are available)
+plot_data_df <- as.data.frame(results_matrix_AbsDelta_S_prime)
+plot_data_df$Symbol <- rownames(results_matrix_AbsDelta_S_prime)
+
+delta_k_data <- temp_delta_df[, c("Symbol", "AbsDelta_kTotal")]
+plot_data_df <- merge(plot_data_df, delta_k_data, by = "Symbol", all.x = TRUE)
+
+# 2. Pivot to long format
+plot_data_long <- plot_data_df %>%
+  pivot_longer(
+    cols = -c(Symbol, AbsDelta_kTotal),
+    names_to = "Cell_Type",
+    values_to = "AbsDelta_S_prime"
+  ) %>%
+  na.omit()
+
+# 3. Create the Faceted Scatter Plot
+plot_abs_delta <- ggplot(plot_data_long, aes(x = AbsDelta_kTotal, y = AbsDelta_S_prime)) +
+  geom_point(alpha = 0.5, size = 0.5) +
+  geom_smooth(method = "lm", col = "red", se = FALSE, linewidth = 0.8) +
+  
+  # Facet the plot by the 9 Cell Types (3 columns for visual space)
+  facet_wrap(~ Cell_Type, scales = "free", ncol = 3) +
+  
+  labs(
+    title = "DLPFC: Magnitude of Topological Change vs. Cellular Specificity Change",
+    x = "AbsDelta k_Total (Magnitude of Total Connectivity Change)",
+    y = "AbsDelta S_prime (Magnitude of Cell-Type Specificity Change)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+# 4. Save the plot
+ggsave("DLPFC_AbsDelta_kTotal_vs_Sprime.png", plot_abs_delta, width = 12, height = 12, units = "in", dpi = 300)
+
+print("DLPFC visualization code is corrected and ready. Please run it locally.")
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# 1. Prepare data for kIn
+plot_data_df_kIn <- as.data.frame(results_matrix_AbsDelta_S_prime)
+plot_data_df_kIn$Symbol <- rownames(results_matrix_AbsDelta_S_prime)
+
+delta_kIn_data <- temp_delta_df[, c("Symbol", "AbsDelta_kIn")]
+plot_data_df_kIn <- merge(plot_data_df_kIn, delta_kIn_data, by = "Symbol", all.x = TRUE)
+
+# 2. Pivot to long format
+plot_data_long_kIn <- plot_data_df_kIn %>%
+  pivot_longer(
+    cols = -c(Symbol, AbsDelta_kIn),
+    names_to = "Cell_Type",
+    values_to = "AbsDelta_S_prime"
+  ) %>%
+  na.omit()
+
+# 3. Create the Faceted Scatter Plot
+plot_abs_delta_kIn <- ggplot(plot_data_long_kIn, aes(x = AbsDelta_kIn, y = AbsDelta_S_prime)) +
+  geom_point(alpha = 0.5, size = 0.5) +
+  geom_smooth(method = "lm", col = "blue", se = FALSE, linewidth = 0.8) +
+  
+  facet_wrap(~ Cell_Type, scales = "free", ncol = 3) +
+  
+  labs(
+    title = "DLPFC: Magnitude of Weighted Degree Change vs. Cellular Specificity Change",
+    x = "AbsDelta k_In (Magnitude of Within-Module Connectivity Change)",
+    y = "AbsDelta S_prime (Magnitude of Cell-Type Specificity Change)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# 4. Save the plot
+ggsave("DLPFC_AbsDelta_kIn_vs_Sprime.png", plot_abs_delta_kIn, width = 12, height = 12, units = "in", dpi = 300)
+print("Figure 'DLPFC_AbsDelta_kIn_vs_Sprime.png' code generated.")
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# 1. Prepare data for C
+plot_data_df_C <- as.data.frame(results_matrix_AbsDelta_S_prime)
+plot_data_df_C$Symbol <- rownames(results_matrix_AbsDelta_S_prime)
+
+delta_C_data <- temp_delta_df[, c("Symbol", "AbsDelta_C")]
+plot_data_df_C <- merge(plot_data_df_C, delta_C_data, by = "Symbol", all.x = TRUE)
+
+# 2. Pivot to long format
+plot_data_long_C <- plot_data_df_C %>%
+  pivot_longer(
+    cols = -c(Symbol, AbsDelta_C),
+    names_to = "Cell_Type",
+    values_to = "AbsDelta_S_prime"
+  ) %>%
+  na.omit()
+
+# 3. Create the Faceted Scatter Plot
+plot_abs_delta_C <- ggplot(plot_data_long_C, aes(x = AbsDelta_C, y = AbsDelta_S_prime)) +
+  geom_point(alpha = 0.5, size = 0.5) +
+  geom_smooth(method = "lm", col = "green", se = FALSE, linewidth = 0.8) +
+  
+  facet_wrap(~ Cell_Type, scales = "free", ncol = 3) +
+  
+  labs(
+    title = "DLPFC: Magnitude of Clustering Change vs. Cellular Specificity Change",
+    x = "AbsDelta C (Magnitude of Local Clustering Change)",
+    y = "AbsDelta S_prime (Magnitude of Cell-Type Specificity Change)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# 4. Save the plot
+ggsave("DLPFC_AbsDelta_C_vs_Sprime.png", plot_abs_delta_C, width = 12, height = 12, units = "in", dpi = 300)
+print("Figure 'DLPFC_AbsDelta_C_vs_Sprime.png' code generated.")
