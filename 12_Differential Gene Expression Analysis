@@ -76,5 +76,5 @@ DEGs[[i]]$Symbol<-sigGene_rownames
 # Find regional consistency for DEGs
 intersect(intersect(DEGs$DLPFC$Symbol,DEGs$Hippo$Symbol),DEGs$Caudate$Symbol)
 
-save(DEGs,mod,file="Differential_gene_expression_3regions_07112025.RData")
+save(DEGs,mod,file="Differential_gene_expression_3regions.RData")
 
