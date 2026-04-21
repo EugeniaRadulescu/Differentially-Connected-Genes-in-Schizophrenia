@@ -401,43 +401,67 @@ save(Gene_sets_from_trajectory_outliers_COs,Gene_sets_from_trajectory_outliers_h
      Gene_sets_from_trajectory_outliers_hippo,
      file="Gene_sets_from_trajectory_outliers_COs_vso_hOL_hippo_final_01102026.RData")
 
+# Use these sets for gene set enrichment analysis with GeneOverlap
 
 
-##### Compare cluster for COs and hOLs gene sets #######
+##### Compare cluster for COs, VSO and hOLs gene sets and 01312026 for Fig.5 #######
+
+# Load the sets of bulk RNA-Seq DCG
+# Create a character vector from all the genes expressed across the four sets of organoids ("Background_genes")
+# Use the gene sets created above: "Gene_sets_from_trajectory_outliers_COs_vso_hOL_hippo_final_01102026.RData"
 
 library(clusterProfiler)
 library(readxl)
 
-intramodular_conn_CTRL_and_SCZ_05092023 <- read_excel("~/data-symlink/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/intramodular_conn_CTRL_and_SCZ_05092023.xlsx")
-
-Universe<-intramodular_conn_CTRL_and_SCZ_05092023$Gene_Symbol
+Universe<-Background_genes
 
 library(org.Hs.eg.db)
 
-load("~/Single_cell_Apr2025/CMC_Ruzika/snrna_expr_matrices/SZBDMulti-Seq/Gene_sets_from_trajectory.RData")
+Organoids_genes_bulk_out<-list("hOL"=Gene_sets_from_trajectory_outliers_hOL,
+                               "Fetal COs"=Gene_sets_from_trajectory_outliers_COs$`Fetal Q COs`,
+                               "Repl COs"=Gene_sets_from_trajectory_outliers_COs$`Replicating COs`,
+                               "Astro COs"=Gene_sets_from_trajectory_outliers_COs$`Astro COs`,
+                               "Neurons hippo"=Gene_sets_from_trajectory_outliers_hippo$`Neurons hippo`,
+                               "Fetal Q hippo"=Gene_sets_from_trajectory_outliers_hippo$`Fetal Q hippo`,
+                               "Repl hippo"=Gene_sets_from_trajectory_outliers_hippo$`Replicating hippo`,
+                               "Neurons VSO"=Gene_sets_from_trajectory_outliers_vso$`Neurons vso`,
+                               "Fetal Q VSO"=Gene_sets_from_trajectory_outliers_vso$`Fetal Q vso`,
+                               "Repl Q VSO"=Gene_sets_from_trajectory_outliers_vso$`Replicating vso`,
+                               "Astro VSO"=Gene_sets_from_trajectory_outliers_vso$`Astro vso`)
 
-Organoids_genes<-unlist(Gene_sets_from_trajectory_75)
+names(Organoids_genes_bulk_out)
 
-Group<-c(rep("Astrocytes COs",length(Gene_sets_from_trajectory_75[[1]])),
-         rep("Fetal quiescent COs",length(Gene_sets_from_trajectory_75[[2]])),
-         rep("Neurons COs",length(Gene_sets_from_trajectory_75[[3]])),
-         rep("Oligodendrocytes hOLs",length(Gene_sets_from_trajectory_75[[4]])),
-         rep("OPC hOLs",length(Gene_sets_from_trajectory_75[[5]])))
-         
-Organoids_genes<-as.data.frame(cbind(Organoids_genes,Group))
-view(Organoids_genes)
-names(Organoids_genes)<-c("Symbol","Group")
+mydf<-Organoids_genes_bulk_out
+
+names(mydf)
+group_names <-names(mydf)
+group_sizes <- lengths(mydf)
+
+mydf<-as.data.frame(unlist(mydf))
+
+group_names
+group_sizes
+
+Group <- rep(group_names, group_sizes)
+
+# Check the result
+print(table(Group))
+
+mydf$Group<-Group
+names(mydf)<-c("Symbol","Group")
 
 # Compare cluster:
+library(clusterProfiler)
 
-formula_res <- compareCluster(Symbol~Group, data=Organoids_genes, fun="enrichGO",OrgDb = org.Hs.eg.db,
+Universe=Background_genes
+formula_res <- compareCluster(Symbol~Group, data=mydf, fun="enrichGO",OrgDb = org.Hs.eg.db,
                               keyType = "SYMBOL",ont = "BP",
-                              pvalueCutoff = 0.05,
+                              pvalueCutoff = 0.001,
                               minGSSize    = 10,
                               maxGSSize    = 500,
                               pAdjustMethod = "bonferroni",
                               universe=Universe,
-                              qvalueCutoff = 0.05)
+                              qvalueCutoff = 0.001)
 
 
 formula_test<-formula_res
@@ -448,7 +472,7 @@ formula_final<-clusterProfiler::simplify(formula_test,cutoff = 0.7,
                                          measure = "Wang",
                                          semData = NULL)
 
-pp <- enrichplot::dotplot(formula_final, x="Modules",showCategory = 5,label_format = 120) + facet_grid(. ~ Group) +
+pp <- enrichplot::dotplot(formula_final, x="Modules",showCategory = 5,label_format = 120) + facet_grid(. ~ Group, labeller = label_wrap_gen(width = 10)) +
   aes(x=as.factor(Group)) + xlab("Modules") +
   scale_fill_gradient(low="red",high="grey80",
                       guide=guide_colorbar(reverse=TRUE, order=1)) +
@@ -457,9 +481,11 @@ pp <- enrichplot::dotplot(formula_final, x="Modules",showCategory = 5,label_form
         panel.grid.major.x = element_blank())
 
 
-pp + theme(axis.text.x = element_text(colour="black",face="bold",size=10,angle = 60,vjust = 0.5, hjust=0.5),
-           axis.text.y = element_text(colour="black",face="bold",size=10),
-           strip.text = element_text(size = 11,face="bold",colour = "darkred"))
+pp + theme(axis.text.x = element_text(colour="black",face="bold",size=7,angle = 60,hjust=1),
+           axis.text.y = element_text(colour="black",face="bold",size=8),
+           strip.text = element_text(size = 8,face="bold",colour = "darkred"))
+
+
 
 ##### rrvgo for Semantic Similarities Between Cell Types organoids #####
 
