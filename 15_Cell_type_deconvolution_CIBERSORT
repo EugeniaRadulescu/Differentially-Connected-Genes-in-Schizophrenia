@@ -1,0 +1,443 @@
+
+##### CIBERSORT function for cell type decomposition #####
+
+library(shiny)
+library(shinyWidgets)
+library(shinyjs)
+library(ipc)
+library(future)
+library(ggplot2)
+library(promises)
+library(shinythemes)
+library(preprocessCore)
+
+if(Sys.info()['sysname'] == "Windows") {
+  plan(multisession) # forks process so uses > 1GB memory
+} else {
+  plan(multicore) # not available on windows
+}
+
+#dependencies
+library(e1071)
+library(parallel)
+library(preprocessCore)
+
+#Core algorithm
+CoreAlg <- function(X, y, absolute, abs_method){
+  
+  #try different values of nu
+  svn_itor <- 3
+  
+  # *** ADD THIS LINE ***
+  library(e1071) 
+  # *********************
+  
+  res <- function(i){
+    if(i==1){nus <- 0.25}
+    if(i==2){nus <- 0.5}
+    if(i==3){nus <- 0.75}
+    model<-svm(X,y,type="nu-regression",kernel="linear",nu=nus,scale=F)
+    model
+  }
+  
+  if(Sys.info()['sysname'] == 'Windows') out <- mclapply(1:svn_itor, res, mc.cores=1) else
+    out <- mclapply(1:svn_itor, res, mc.cores=svn_itor)
+  
+  nusvm <- rep(0,svn_itor)
+  corrv <- rep(0,svn_itor)
+  
+  #do cibersort
+  t <- 1
+  while(t <= svn_itor) {
+    weights = t(out[[t]]$coefs) %*% out[[t]]$SV
+    weights[which(weights<0)]<-0
+    w<-weights/sum(weights)
+    u <- sweep(X,MARGIN=2,w,'*')
+    k <- apply(u, 1, sum)
+    nusvm[t] <- sqrt((mean((k - y)^2)))
+    corrv[t] <- cor(k, y)
+    t <- t + 1
+  }
+  
+  #pick best model
+  rmses <- nusvm
+  mn <- which.min(rmses)
+  model <- out[[mn]]
+  
+  #get and normalize coefficients
+  q <- t(model$coefs) %*% model$SV
+  q[which(q<0)]<-0
+  if(!absolute || abs_method == 'sig.score') w <- (q/sum(q)) #relative space (returns fractions)
+  if(absolute && abs_method == 'no.sumto1') w <- q #absolute space (returns scores)
+  
+  mix_rmse <- rmses[mn]
+  mix_r <- corrv[mn]
+  
+  newList <- list("w" = w, "mix_rmse" = mix_rmse, "mix_r" = mix_r)
+  
+}
+
+#do permutations
+doPerm <- function(perm, X, Y, absolute, abs_method){
+  itor <- 1
+  Ylist <- as.list(data.matrix(Y))
+  dist <- matrix()
+  
+  while(itor <= perm){
+    #random mixture
+    yr <- as.numeric(Ylist[sample(length(Ylist),dim(X)[1])])
+    
+    #standardize mixture
+    yr <- (yr - mean(yr)) / sd(yr)
+    
+    #run CIBERSORT core algorithm
+    result <- CoreAlg(X, yr, absolute, abs_method)
+    
+    mix_r <- result$mix_r
+    
+    #store correlation
+    if(itor == 1) {dist <- mix_r}
+    else {dist <- rbind(dist, mix_r)}
+    
+    itor <- itor + 1
+  }
+  newList <- list("dist" = dist)
+}
+
+#main function
+## Note: GJS modified this function to no longer need to read in matrices from a file, but instead using variables loaded into the workspace
+## Note: KAW modified this function for shiny progress bar and to fix duplicates
+
+CIBERSORT <- function(sig_matrix, mixture_file, perm=0, QN=TRUE, absolute=FALSE, abs_method='sig.score', interruptCallback=function(){}, progressSet=function(){}, progressStart=0.0, progressScale=1.0, currStep=1, totalSteps=1){
+  
+  if(absolute && abs_method != 'no.sumto1' && abs_method != 'sig.score') stop("abs_method must be set to either 'sig.score' or 'no.sumto1'")
+  
+  #read in data
+  # X <- read.table(sig_matrix,header=T,sep="\t",row.names=1,check.names=F)
+  # Y <- read.table(mixture_file, header=T, sep="\t",check.names=F)
+  X <- sig_matrix
+  Y <- mixture_file
+  
+  #to prevent crashing on duplicated gene symbols, add unique numbers to identical names
+  dups <- dim(Y)[1] - length(unique(rownames(Y)))
+  if(dups > 0) {
+    warning(paste(dups," duplicated gene symbol(s) found in mixture file!",sep=""))
+    rownames(Y) <- make.names(rownames(Y), unique=TRUE)
+  }
+  
+  X <- data.matrix(X)
+  Y <- data.matrix(Y)
+  
+  #order
+  X <- X[order(rownames(X)),]
+  Y <- Y[order(rownames(Y)),]
+  
+  P <- perm #number of permutations
+  
+  #anti-log if max < 50 in mixture file
+  if(max(Y) < 50) {Y <- 2^Y}
+  
+  #quantile normalization of mixture file
+  if(QN == TRUE){
+    tmpc <- colnames(Y)
+    tmpr <- rownames(Y)
+    Y <- normalize.quantiles(Y)
+    colnames(Y) <- tmpc
+    rownames(Y) <- tmpr
+  }
+  
+  #store original mixtures
+  Yorig <- Y
+  Ymedian <- max(median(Yorig),1)
+  
+  #intersect genes
+  Xgns <- row.names(X)
+  Ygns <- row.names(Y)
+  YintX <- Ygns %in% Xgns
+  Y <- Y[YintX,]
+  XintY <- Xgns %in% row.names(Y)
+  X <- X[XintY,]
+  
+  #standardize sig matrix
+  X <- (X - mean(X)) / sd(as.vector(X))
+  
+  #empirical null distribution of correlation coefficients
+  if(P > 0) {nulldist <- sort(doPerm(P, X, Y, absolute, abs_method)$dist)}
+  
+  header <- c('Mixture',colnames(X),"P-value","Correlation","RMSE")
+  if(absolute) header <- c(header, paste('Absolute score (',abs_method,')',sep=""))
+  
+  output <- matrix()
+  itor <- 1
+  mixtures <- dim(Y)[2]
+  pval <- 9999
+  
+  #iterate through mixtures
+  time.eta <- "This step can take a while"
+  while(itor <= mixtures){
+    start.time <- Sys.time()
+    
+    interruptCallback()
+    
+    #progressSet(value=progressStart + progressScale * (itor-1) / mixtures, message=sprintf("Step %d/%d: Running CIBERSORT", currStep, totalSteps), detail=sprintf("%s, please DO NOT refresh or close the page", time.eta))
+    
+    y <- Y[,itor]
+    
+    #standardize mixture
+    y <- (y - mean(y)) / sd(y)
+    
+    #run SVR core algorithm
+    result <- CoreAlg(X, y, absolute, abs_method)
+    
+    #get results
+    w <- result$w
+    mix_r <- result$mix_r
+    mix_rmse <- result$mix_rmse
+    
+    if(absolute && abs_method == 'sig.score') {
+      w <- w * median(Y[,itor]) / Ymedian
+    }
+    
+    #calculate p-value
+    if(P > 0) {pval <- 1 - (which.min(abs(nulldist - mix_r)) / length(nulldist))}
+    
+    #print output
+    out <- c(colnames(Y)[itor],w,pval,mix_r,mix_rmse)
+    if(absolute) out <- c(out, sum(w))
+    if(itor == 1) {output <- out}
+    else {output <- rbind(output, out)}
+    
+    itor <- itor + 1
+    
+    end.time <- Sys.time()
+    time.eta <- sprintf("ETA: %s", format((end.time - start.time) * (mixtures - itor + 1), format="%H:%M:%S"))
+  }
+  
+  #save results
+  #write.table(rbind(header,output), file="CIBERSORT-Results.txt", sep="\t", row.names=F, col.names=F, quote=F)
+  
+  #return matrix object containing all results
+  obj <- rbind(header,output)
+  obj <- obj[,-1]
+  obj <- obj[-1,]
+  obj <- matrix(as.numeric(unlist(obj)),nrow=nrow(obj))
+  rownames(obj) <- colnames(Y)
+  if(!absolute){colnames(obj) <- c(colnames(X),"P-value","Correlation","RMSE")}
+  else{colnames(obj) <- c(colnames(X),"P-value","Correlation","RMSE",paste('Absolute score (',abs_method,')',sep=""))}
+  obj
+}
+
+library(dplyr)
+library(stringr)
+library(tibble)
+
+# 1. Prepare Inputs
+# Ensure both are matrices, with genes as rows and samples/cell types as columns.
+# Take the RPKM expression files from preparing input for WGCNA
+
+bulk_matrix_cibersort <- as.matrix(Bulk_DLPFC_RPKM)
+bulk_matrix_cibersort <- as.matrix(Bulk_caudate_RPKM)
+bulk_matrix_cibersort <- as.matrix(Bulk_hippo_RPKM)
+
+# Calculate and save an RPKM signature matrix from scRNA-seq (Tran et al 2020).
+# Load the signature matrix
+
+sig_matrix_cibersort <- as.matrix(SignatureMatrix_DLPFC)
+
+# 2. Execute CIBERSORT
+# perm=0 for speed.
+
+res_DLPFC <- CIBERSORT(
+  sig_matrix = sig_matrix_cibersort,
+  mixture_file = bulk_matrix_cibersort,
+  perm = 0, 
+  QN = FALSE,
+  absolute = FALSE
+)
+
+res_hippo <- CIBERSORT(
+  sig_matrix = sig_matrix_cibersort,
+  mixture_file = bulk_matrix_cibersort,
+  perm = 0, 
+  QN = FALSE,
+  absolute = FALSE
+)
+
+save(res_hippo,file="Results_cell_type_decomposition_hippo_11292025")
+
+print("Hippo Deconvolution Complete using CIBERSORT.")
+
+#### Calculate cell-type proportions ######
+  
+library(dplyr)
+library(tibble)
+
+library(dplyr)
+library(tibble)
+library(stringr)
+library(tidyr)
+
+# 1. Convert CIBERSORT results matrix (res_DLPFC) to a data frame
+
+dlpfc_Prop_Data <- as.data.frame(res_DLPFC) %>%
+  rownames_to_column("RNum") %>%
+  # Select only the estimated cell type proportions
+  select(RNum, all_of(colnames(SignatureMatrix_DLPFC)))
+
+caudate_Prop_Data <- as.data.frame(res_caudate) %>%
+  rownames_to_column("RNum") %>%
+  # Select only the estimated cell type proportions
+  select(RNum, all_of(colnames(SignatureMatrix_DLPFC)))
+
+hippo_Prop_Data <- as.data.frame(res_hippo) %>%
+  rownames_to_column("RNum") %>%
+  # Select only the estimated cell type proportions
+  select(RNum, all_of(colnames(SignatureMatrix_DLPFC))) 
+
+# 2. Merge with the metadata
+DLPFC_Prop_Data <- DLPFC_Prop_Data %>%
+  left_join(Metadata_DLPFC_Final %>% rownames_to_column("RNum"), by = "RNum")
+
+
+caudate_Prop_Data <- caudate_Prop_Data %>%
+  left_join(Metadata_caudate_Final %>% rownames_to_column("RNum"), by = "RNum")
+
+hippo_Prop_Data <- hippo_Prop_Data %>%
+  left_join(Metadata_hippo_Final %>% rownames_to_column("RNum"), by = "RNum")
+
+
+# 3. Calculate the mean proportion for each cell type in SCZD and Control groups
+# We explicitly select the columns that represent the cell type proportions (the columns of SignatureMatrix_DLPFC)
+# See for example the summary for caudate:
+
+caudate_Prop_Summary <- caudate_Prop_Data %>%
+  group_by(Dx) %>%
+  summarise(across(all_of(colnames(SignatureMatrix_DLPFC)), mean, na.rm = TRUE)) %>%
+  pivot_longer(
+    cols = -Dx,
+    names_to = "CellType",
+    values_to = "Mean_Proportion"
+  ) %>%
+  pivot_wider(
+    names_from = Dx,
+    values_from = Mean_Proportion
+  )
+
+# 4. Calculate Delta P: SCZD_Mean - Control_Mean
+caudate_Prop_Summary <- caudate_Prop_Summary %>%
+  mutate(Delta_P = SCZD - Control) %>%
+  arrange(Delta_P)
+
+# 5. Round the final output for readability
+caudate_Prop_Summary$Control <- round(caudate_Prop_Summary$Control, 4)
+caudate_Prop_Summary$SCZD <- round(caudate_Prop_Summary$SCZD, 4)
+caudate_Prop_Summary$Delta_P <- round(caudate_Prop_Summary$Delta_P, 4)
+
+# Display the final caudate Delta P table
+print("--- CORRECTED FINAL caudate DELTA P (SCZD - Control, CIBERSORT) ---")
+print(caudate_Prop_Summary)
+
+library(dplyr)
+library(broom)
+
+# Get the list of cell types to test
+cell_type_cols <- colnames(SignatureMatrix_DLPFC)
+
+# Perform a t-test for each cell type
+caudate_Statistical_Test <- caudate_Prop_Data %>%
+  # Select only the relevant columns: proportions and the diagnosis (Dx)
+  select(Dx, all_of(cell_type_cols)) %>%
+  # Pivot to long format for easy iteration and testing
+  tidyr::pivot_longer(
+    cols = all_of(cell_type_cols),
+    names_to = "CellType",
+    values_to = "Proportion"
+  ) %>%
+  # Group by cell type and nest the data
+  group_by(CellType) %>%
+  tidyr::nest() %>%
+  # Run the t-test on the nested data
+  mutate(
+    test_result = purrr::map(data, ~ t.test(Proportion ~ Dx, data = .x)),
+    # Extract model statistics using the broom package
+    stats = purrr::map(test_result, tidy)
+  ) %>%
+  # Unnest the statistics and clean up
+  tidyr::unnest(stats) %>%
+  select(CellType, estimate1, estimate2, p.value) %>%
+  # Rename columns for clarity (estimate1/2 correspond to SCZD/Control mean proportions)
+  rename(Mean_Control = estimate1, Mean_SCZD = estimate2, P_Value = p.value)
+
+# Merge with the Delta P table for the final report
+caudate_Final_Report <- caudate_Prop_Summary %>%
+  left_join(caudate_Statistical_Test, by = "CellType") %>%
+  # Select and reorder final columns
+  select(CellType, Control, SCZD, Delta_P, P_Value) %>%
+  # Apply FDR (False Discovery Rate) correction (Benjamini-Hochberg)
+  mutate(FDR = p.adjust(P_Value, method = "BH")) %>%
+  arrange(FDR, P_Value)
+
+# Round the final output for presentation
+caudate_Final_Report$P_Value <- round(caudate_Final_Report$P_Value, 5)
+caudate_Final_Report$FDR <- round(caudate_Final_Report$FDR, 5)
+
+print("--- FINAL caudate REPORT (Delta P & Significance) ---")
+print(caudate_Final_Report)
+
+library(dplyr)
+library(tidyr)
+
+# Identify rows where Delta_P is 0 (which corresponds to all NaN rows)
+caudate_Final_Report_Clean <- caudate_Final_Report %>%
+  mutate(
+    P_Value = if_else(Delta_P == 0, 1.0, P_Value),
+    FDR = if_else(Delta_P == 0, 1.0, FDR)
+  ) %>%
+  # Re-round the FDR/P-Value after the correction
+  mutate(
+    P_Value = round(P_Value, 5),
+    FDR = round(FDR, 5)
+  )
+
+print("--- FINAL caudate REPORT (NaNs Corrected) ---")
+print(caudate_Final_Report_Clean)
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# NOTE: This code assumes the DLPFC_Prop_Data object (containing RNum, Dx, and 19 CellType Proportions) 
+# is available in your R environment from the previous steps.
+
+# 1. Prepare data for plotting the three key cell types
+df_plot_keycells <- caudate_Prop_Data %>%
+  select(Dx, Inhib_C, Oligo, Macrophage) %>%
+  pivot_longer(cols = c("Inhib_C","Oligo","Macrophage"), 
+               names_to = "CellType", 
+               values_to = "Proportion")
+
+# 2. Density Plot Generation
+plot_density <- ggplot(df_plot_keycells, aes(x = Proportion, fill = Dx)) +
+  # Use geom_density for the distribution curves
+  geom_density(alpha = 0.6, linewidth = 0.8) + 
+  # Separate the plots by cell type, allowing free x-scales since the proportion range differs
+  facet_wrap(~ CellType, scales = "free_x", ncol = 1) + 
+  scale_fill_manual(values = c("Control" = "darkblue", "SCZD" = "red")) +
+  labs(
+    title = "caudate: Distribution of Key Cell Type Proportions (Control vs. SCZD)",
+    x = "Cell Type Proportion",
+    fill = "Diagnosis"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    strip.text = element_text(face = "bold")
+  )
+
+# 3. Save the plot
+ggsave("caudate_Density_Plot_KeyCells.png", plot_density, width = 10, height = 9, units = "in", dpi = 300)
+
+print("Density plot for Excit_A, Macrophage, and Tcell proportions saved as 'caudate_Density_Plot_KeyCells.png'.")
+
+
+
