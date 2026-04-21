@@ -1,13 +1,9 @@
 # --- 1. Load and Prepare Data ---
-# Note: Ensure the file "intramodular_conn_CTRL_and_SCZ_clarify_permut_12012025.csv" is in your working directory.
-# intramodular_conn_CTRL_and_SCZ_clarify_permut_12012025 <- read.csv("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/intramodular_conn_CTRL_and_SCZ_clarify_permut_12012025.csv")
-# intramodular_conn_CTRL_and_SCZ_clarify_permut_hippo_12012025 <- read.csv("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/intramodular_conn_CTRL_and_SCZ_clarify_permut_hippo_12012025.csv")
-# intramodular_conn_CTRL_and_SCZ_clarify_permut_caudate_12012025 <- read.csv("/home/edata/For_Cambridge_project_January2023/Robust_WGCNA_gencodeID_v41/intramodular_conn_CTRL_and_SCZ_clarify_permut_caudate_12012025.csv")
+
 
 intramodular_conn_CTRL_and_SCZ <- read_excel("intramodular_conn_CTRL_and_SCZ.xlsx")
 intraMod_con_refCTRL_modules_12272022 <- read_excel("Hippocampus/intraMod_con_refCTRL_modules_12272022.xlsx")
 intraMod_con_refCTRL_modules_01092023 <- read_excel("Caudate/intraMod_con_refCTRL_modules_01092023.xlsx")
-
 
 
 ##### EXCHANGEABILITY CHECK: CTRL vs SCZ ######
@@ -156,6 +152,7 @@ run_10000_permutations_final_R <- function(data_df, ctrl_col, scz_col, metric_na
 
 
 # --- 2. THE OVERLAP HELPER FUNCTION ---
+
 # This ensures you never mix up boundaries or regions again.
 get_golden_overlap <- function(data_df, ctrl_col, scz_col, boundary, iqr_outliers) {
   # Standardize and calculate delta in one go
@@ -252,5 +249,5 @@ my_df_all <- data.frame(lapply(golden_3regions_all, "length<-", max(lengths(gold
 names(my_df_all)<-c("C DLPFC","kIn DLPFC","kTot DLPFC","C Caudate","kIn Caudate","kTot Caudate",
                 "C Hippocampus","kIn Hippocampus","kTot hippocampus")
 
-write.csv(my_df_all,file="Overlap_out_perm_IQR_all_regional_nutJust_consistent_02042026.csv")
+write.csv(my_df_all,file="Overlap_out_perm_IQR_all_regional.csv")
 
