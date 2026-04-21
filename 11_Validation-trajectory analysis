@@ -1,3 +1,6 @@
+
+###### For an earlier version with only two sets of organoids #########
+
 rm(list = ls())  # Clear the environment
 options(warn=-1) # Turn off warning message globally
 library(monocle3) # Load Monocle
@@ -239,6 +242,296 @@ names(Gene_sets_from_trajectory_75)<-c("Astrocytes COs","Fetal quiescent COs",
 
 
 save(Gene_sets_from_trajectory_95,Gene_sets_from_trajectory_75,file="Gene_sets_from_trajectory.RData")
+
+
+##### Analyze the 4 sets of organoids 04092026 ###########
+
+library(monocle3)
+
+load("~/Your_directory/Organoids_01202026.RData")
+
+cds_hOLs <- reduce_dimension(cds_hOLs,reduction_method = "UMAP")
+p3<-plot_cells(cds_hOLs, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
+
+cds_COs <- reduce_dimension(cds_COs,reduction_method = "UMAP")
+p4<-plot_cells(cds_COs, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
+
+p3+p4
+
+cds_vso <- reduce_dimension(cds_vso,reduction_method = "UMAP")
+p5<-plot_cells(cds_vso, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
+
+cds_hippo <- reduce_dimension(cds_hippo,reduction_method = "UMAP")
+p6<-plot_cells(cds_hippo, label_groups_by_cluster=FALSE,  color_cells_by = "cell_type2",group_label_size = 5)
+
+p5 + p6
+
+#### Only for COs, if you use the original organoids file
+# plot_cells(cds_COs, color_cells_by="Dx", label_cell_groups=FALSE,cell_size=0.45,cell_stroke=0.2)
+# cds_COs <- align_cds(cds_COs, num_dim = 50, alignment_group = "Dx")
+# Now I saved a specific file with aligned cds!!!!!
+
+cds_hOLs <- reduce_dimension(cds_hOLs)
+cds_COs <- reduce_dimension(cds_COs)
+
+cds_vso <- reduce_dimension(cds_vso)
+cds_hippo <- reduce_dimension(cds_hippo)
+
+#plot_cells(cds_COs, color_cells_by="Dx", label_cell_groups=FALSE,cell_size=0.45,cell_stroke=0.3)
+
+cds_hOLs <- cluster_cells(cds_hOLs, resolution=1e-1)
+p7<-plot_cells(cds_hOLs,group_label_size = 5,cell_size=0.6,cell_stroke=0.2)
+
+cds_COs <- cluster_cells(cds_COs, resolution=1e-5)
+p8<-plot_cells(cds_COs,group_label_size = 5,cell_size=0.45,cell_stroke=0.2)
+
+p7 + p8
+
+cds_vso <- cluster_cells(cds_vso, resolution=1e-5)
+p9<-plot_cells(cds_vso,group_label_size = 5,cell_size=0.6,cell_stroke=0.2)
+
+cds_hippo <- cluster_cells(cds_hippo, resolution=1e-5)
+p10<-plot_cells(cds_hippo,group_label_size = 5,cell_size=0.45,cell_stroke=0.2)
+
+p9+p10
+
+plot_cells(cds_hOLs, color_cells_by="partition", group_cells_by="partition",group_label_size = 5)
+plot_cells(cds_COs, color_cells_by="partition", group_cells_by="partition",group_label_size = 5)
+
+p11<-plot_cells(cds_hOLs, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
+p12<-plot_cells(cds_COs, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
+p11+p12
+
+p13<-plot_cells(cds_vso, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
+p14<-plot_cells(cds_hippo, color_cells_by="cell_type2",label_groups_by_cluster=FALSE,group_label_size = 5)
+p13+p14
+
+cds_hOLs <- learn_graph(cds_hOLs) # Save the cds_hOLs with learned graph
+cds_COs <- learn_graph(cds_COs) # Save the cds_COs with learned graph
+cds_vso <- learn_graph(cds_vso) # Save the cds_vso with learned graph
+cds_hippo <- learn_graph(cds_hippo) # Save the cds_hippo with learned graph
+
+
+# cds_hOLs<-order_cells(cds_hOLs)
+
+table(pData(cds_hOLs)$cell_type2)
+table(pData(cds_COs)$cell_type2)
+table(pData(cds_vso)$cell_type2)
+table(pData(cds_hippo)$cell_type2)
+
+
+# This is better:
+
+get_earliest_principal_node <- function(cds_hOLs, time_bin='oligodendrocytes'){
+  cell_ids <- which(colData(cds_hOLs)[, "cell_type2"] == time_bin)
+  
+  closest_vertex <-
+    cds_hOLs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds_hOLs), ])
+  root_pr_nodes <-
+    igraph::V(principal_graph(cds_hOLs)[["UMAP"]])$name[as.numeric(names
+                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+}
+
+get_earliest_principal_node <- function(cds_COs, time_bin='fetal_replicating'){
+  cell_ids <- which(colData(cds_COs)[, "cell_type2"] == time_bin)
+  
+  closest_vertex <-
+    cds_COs@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds_COs), ])
+  root_pr_nodes <-
+    igraph::V(principal_graph(cds_COs)[["UMAP"]])$name[as.numeric(names
+                                                                   (which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+}
+
+cds_hOLs <- order_cells(cds_hOLs, root_pr_nodes=get_earliest_principal_node(cds_hOLs))
+cds_COs <- order_cells(cds_COs, root_pr_nodes=get_earliest_principal_node(cds_COs))
+
+plot_cells(cds_COs,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE,
+           cell_size=0.8,cell_stroke=0.2,
+           graph_label_size=3)
+
+# Subset your organoids by cell-types:
+
+
+neurons_vso <- which(colData(cds_vso)$cell_type2 %in% c("neurons"))
+fetal_Q_vso <- which(colData(cds_vso)$cell_type2 %in% c("fetal_quiescent"))
+repl_vso<- which(colData(cds_vso)$cell_type2 %in% c("fetal_replicating"))
+astro_vso <- which(colData(cds_vso)$cell_type2 %in% c("astrocytes"))
+
+neurons_COs <- which(colData(cds_COs)$cell_type2 %in% c("neurons")) # You will not use these
+fetal_Q_COs <- which(colData(cds_COs)$cell_type2 %in% c("fetal_quiescent"))
+repl_COs<- which(colData(cds_COs)$cell_type2 %in% c("fetal_replicating"))
+astro_COs <- which(colData(cds_COs)$cell_type2 %in% c("astrocytes"))
+
+oligo_OPC_hOL <- which(colData(cds_hOLs)$cell_type2 %in% c("oligodendrocytes", "OPC"))
+
+
+cds_neurons_vso <- new_cell_data_set(
+  expression_data = counts(cds_vso)[, neurons_vso], 
+  cell_metadata = colData(cds_vso)[neurons_vso, ], 
+  gene_metadata = rowData(cds_vso)
+)
+
+cds_fetal_Q_vso <- new_cell_data_set(
+  expression_data = counts(cds_vso)[, fetal_Q_vso], 
+  cell_metadata = colData(cds_vso)[fetal_Q_vso, ], 
+  gene_metadata = rowData(cds_vso)
+)
+
+cds_repl_vso <- new_cell_data_set(
+  expression_data = counts(cds_vso)[, repl_vso], 
+  cell_metadata = colData(cds_vso)[repl_vso, ], 
+  gene_metadata = rowData(cds_vso)
+)
+
+cds_astro_vso <- new_cell_data_set(
+  expression_data = counts(cds_vso)[, astro_vso], 
+  cell_metadata = colData(cds_vso)[astro_vso, ], 
+  gene_metadata = rowData(cds_vso)
+)
+
+
+
+cds_neurons_COs <- new_cell_data_set(
+  expression_data = counts(cds_COs)[, neurons_COs], 
+  cell_metadata = colData(cds_COs)[neurons_COs, ], 
+  gene_metadata = rowData(cds_COs)
+)
+
+cds_fetal_Q_COs <- new_cell_data_set(
+  expression_data = counts(cds_COs)[, fetal_Q_COs], 
+  cell_metadata = colData(cds_COs)[fetal_Q_COs, ], 
+  gene_metadata = rowData(cds_COs)
+)
+
+cds_repl_COs <- new_cell_data_set(
+  expression_data = counts(cds_COs)[, repl_COs], 
+  cell_metadata = colData(cds_COs)[repl_COs, ], 
+  gene_metadata = rowData(cds_COs)
+)
+
+cds_astro_COs <- new_cell_data_set(
+  expression_data = counts(cds_COs)[, astro_COs], 
+  cell_metadata = colData(cds_COs)[astro_COs, ], 
+  gene_metadata = rowData(cds_COs)
+)
+
+
+cds_oligo_OPC_hOL <- new_cell_data_set(
+  expression_data = counts(cds_hOLs)[, oligo_OPC_hOL], 
+  cell_metadata = colData(cds_hOLs)[oligo_OPC_hOL, ], 
+  gene_metadata = rowData(cds_hOLs)
+)
+
+
+# 3. Transfer the UMAP coordinates
+
+reducedDims(cds_neurons_vso)$UMAP <- reducedDims(cds_vso)$UMAP[neurons_vso, ]
+reducedDims(cds_fetal_Q_vso)$UMAP <- reducedDims(cds_vso)$UMAP[fetal_Q_vso, ]
+reducedDims(cds_repl_vso)$UMAP <- reducedDims(cds_vso)$UMAP[repl_vso, ]
+reducedDims(cds_astro_vso)$UMAP <- reducedDims(cds_vso)$UMAP[astro_vso, ]
+
+reducedDims(cds_neurons_COs)$UMAP <- reducedDims(cds_COs)$UMAP[neurons_COs, ]
+reducedDims(cds_fetal_Q_COs)$UMAP <- reducedDims(cds_COs)$UMAP[fetal_Q_COs, ]
+reducedDims(cds_repl_COs)$UMAP <- reducedDims(cds_COs)$UMAP[repl_COs, ]
+reducedDims(cds_astro_COs)$UMAP <- reducedDims(cds_COs)$UMAP[astro_COs, ]
+
+reducedDims(cds_oligo_OPC_hOL)$UMAP <- reducedDims(cds_hOLs)$UMAP[oligo_OPC_hOL, ]
+
+
+# 4. The Magic Step: Re-Cluster & Learn Graph
+
+cds_neurons_vso <- cluster_cells(cds_neurons_vso, reduction_method = "UMAP",k=5)
+cds_neurons_vso <- learn_graph(cds_neurons_vso, use_partition = FALSE)
+
+cds_fetal_Q_vso <- cluster_cells(cds_fetal_Q_vso, reduction_method = "UMAP",k=5)
+cds_fetal_Q_vso <- learn_graph(cds_fetal_Q_vso, use_partition = FALSE)
+
+cds_repl_vso <- cluster_cells(cds_repl_vso, reduction_method = "UMAP",k=5)
+cds_repl_vso <- learn_graph(cds_repl_vso, use_partition = FALSE)
+
+cds_astro_vso <- cluster_cells(cds_astro_vso, reduction_method = "UMAP",k=5)
+cds_astro_vso <- learn_graph(cds_astro_vso, use_partition = FALSE)
+
+cds_neurons_COs <- cluster_cells(cds_neurons_COs, reduction_method = "UMAP",k=5)
+cds_neurons_COs <- learn_graph(cds_neurons_COs, use_partition = FALSE)
+
+cds_fetal_Q_COs <- cluster_cells(cds_fetal_Q_COs, reduction_method = "UMAP",k=5)
+cds_fetal_Q_COs <- learn_graph(cds_fetal_Q_COs, use_partition = FALSE)
+
+cds_repl_COs <- cluster_cells(cds_repl_COs, reduction_method = "UMAP",k=5)
+cds_repl_COs <- learn_graph(cds_repl_COs, use_partition = FALSE)
+
+cds_astro_COs <- cluster_cells(cds_astro_COs, reduction_method = "UMAP",k=5)
+cds_astro_COs <- learn_graph(cds_astro_COs, use_partition = FALSE)
+
+cds_oligo_OPC_hOL <- cluster_cells(cds_oligo_OPC_hOL, reduction_method = "UMAP",k=5)
+cds_oligo_OPC_hOL <- learn_graph(cds_oligo_OPC_hOL, use_partition = FALSE)
+
+
+# 5. Visualize to confirm it's a clean 'backbone'
+
+
+p_neurons_vso<-plot_cells(cds_neurons_vso, 
+                     color_cells_by = "cell_type2", 
+                     cell_size = 0.8,
+                     label_principal_points = TRUE,
+                     label_groups_by_cluster = FALSE)
+p_neurons_vso
+
+p_fetal_Q_vso<-plot_cells(cds_fetal_Q_vso, 
+                          color_cells_by = "cell_type2", 
+                          cell_size = 0.8,
+                          label_principal_points = TRUE,
+                          label_groups_by_cluster = FALSE)
+p_fetal_Q_vso
+
+
+
+cds_neurons_vso <- order_cells(cds_neurons_vso, reduction_method = 'UMAP') 
+cds_fetal_Q_vso <- order_cells(cds_fetal_Q_vso, reduction_method = 'UMAP')
+cds_repl_vso <- order_cells(cds_repl_vso, reduction_method = 'UMAP')
+cds_astro_vso <- order_cells(cds_astro_vso, reduction_method = 'UMAP')
+
+
+cds_neurons_COs <- order_cells(cds_neurons_COs, reduction_method = 'UMAP') # Not to use anyway; too few cells
+cds_fetal_Q_COs <- order_cells(cds_fetal_Q_COs, reduction_method = 'UMAP')
+cds_repl_COs <- order_cells(cds_repl_COs, reduction_method = 'UMAP')
+cds_astro_COs <- order_cells(cds_astro_COs, reduction_method = 'UMAP')
+
+
+# This will guide your starting point for hOL:
+
+p_oligo_OPC_hOL<-plot_cells(cds_oligo_OPC_hOL, 
+                            color_cells_by = "cell_type2", 
+                            cell_size = 0.8,
+                            label_principal_points = TRUE,
+                            label_groups_by_cluster = FALSE)
+p_oligo_OPC_hOL
+
+cds_oligo_OPC_hOL <- order_cells(cds_oligo_OPC_hOL, reduction_method = 'UMAP') # Start from the most faraway OPC
+
+
+p1<-plot_cells(cds_oligo_OPC_hOL,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE,
+           cell_size=0.8,cell_stroke=0.2,
+           graph_label_size=3) + ggtitle("OL OPC hOL")
+
+p1
+
+
 
 ##### Compare cluster for COs and hOLs gene sets #######
 
