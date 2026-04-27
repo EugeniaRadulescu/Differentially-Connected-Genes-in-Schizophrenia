@@ -370,7 +370,7 @@ analyze_WGCNA_regions <- function(region_name) {
 analyze_WGCNA_regions("DLPFC")
 
 
-##### For log2FC-abs diffs plots; Figures S16-S24 ######
+##### For log2FC-abs diffs plots; Figures S28-S36 ######
 
 
 library(ggplot2)
